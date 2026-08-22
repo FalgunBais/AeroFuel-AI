@@ -17,106 +17,7 @@ function latLonToVector3(lat, lon, radius = 2) {
   return new THREE.Vector3(x, y, z);
 }
 
-// Generate single high-res Canvas Texture for Earth
-function generateEarthTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 2048;
-  canvas.height = 1024;
-  const ctx = canvas.getContext('2d');
-
-  // Deep Navy Ocean
-  const oceanGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  oceanGrad.addColorStop(0, '#030a16');
-  oceanGrad.addColorStop(0.5, '#061328');
-  oceanGrad.addColorStop(1, '#030a16');
-  ctx.fillStyle = oceanGrad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Lat/Lon Graticules
-  ctx.strokeStyle = 'rgba(56, 189, 248, 0.07)';
-  ctx.lineWidth = 1;
-  for (let lat = 0; lat <= canvas.height; lat += canvas.height / 12) {
-    ctx.beginPath();
-    ctx.moveTo(0, lat);
-    ctx.lineTo(canvas.width, lat);
-    ctx.stroke();
-  }
-  for (let lon = 0; lon <= canvas.width; lon += canvas.width / 24) {
-    ctx.beginPath();
-    ctx.moveTo(lon, 0);
-    ctx.lineTo(lon, canvas.height);
-    ctx.stroke();
-  }
-
-  // Continents Landmass Polygons
-  ctx.fillStyle = '#0e233d';
-  ctx.strokeStyle = '#1b436c';
-  ctx.lineWidth = 1.5;
-
-  const toX = (lon) => ((lon + 180) / 360) * canvas.width;
-  const toY = (lat) => ((90 - lat) / 180) * canvas.height;
-
-  function drawLandPoly(coords) {
-    if (coords.length < 3) return;
-    ctx.beginPath();
-    ctx.moveTo(toX(coords[0][1]), toY(coords[0][0]));
-    for (let i = 1; i < coords.length; i++) {
-      ctx.lineTo(toX(coords[i][1]), toY(coords[i][0]));
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  // 1. Indian Subcontinent & South Asia
-  drawLandPoly([[35, 74], [30, 68], [24, 68], [19, 72], [10, 76], [8, 77], [13, 80], [21, 87], [26, 92], [28, 88], [34, 78]]);
-  // 2. Southeast Asia & Indonesia
-  drawLandPoly([[22, 92], [15, 100], [10, 98], [1, 103], [-6, 106], [-8, 115], [-5, 120], [6, 117], [16, 108], [21, 105]]);
-  // 3. East Asia (China, Japan, Korea)
-  drawLandPoly([[42, 80], [50, 120], [40, 128], [35, 129], [32, 121], [22, 114], [25, 100], [38, 90]]);
-  drawLandPoly([[44, 142], [38, 140], [34, 132], [32, 130], [36, 138], [43, 145]]);
-  // 4. Middle East & Arabian Peninsula
-  drawLandPoly([[37, 36], [32, 35], [28, 34], [22, 38], [12, 44], [16, 53], [25, 57], [30, 48], [36, 42]]);
-  // 5. Europe & British Isles
-  drawLandPoly([[70, 25], [60, 5], [52, 2], [44, -1], [36, -6], [36, 14], [40, 26], [46, 14], [54, 12], [58, 28], [65, 32]]);
-  drawLandPoly([[58, -5], [50, -5], [51, 1], [56, -2]]);
-  // 6. Africa
-  drawLandPoly([[36, -6], [32, 32], [12, 44], [0, 42], [-26, 32], [-34, 18], [-22, 14], [4, 9], [12, -15], [30, -10]]);
-  // 7. North America
-  drawLandPoly([[70, -165], [60, -140], [48, -125], [30, -115], [20, -105], [15, -90], [25, -80], [42, -70], [55, -60], [70, -70], [72, -125]]);
-  // 8. South America
-  drawLandPoly([[12, -75], [5, -52], [-5, -35], [-22, -40], [-55, -68], [-40, -73], [-15, -75], [0, -80]]);
-  // 9. Australia
-  drawLandPoly([[-12, 130], [-15, 145], [-28, 153], [-38, 145], [-35, 115], [-20, 114]]);
-
-  // Night city illumination clusters
-  ctx.fillStyle = '#38bdf8';
-  const majorCities = [
-    [28.56, 77.10], [19.08, 72.86], [13.19, 77.70], [12.99, 80.17], [22.65, 88.44], [17.24, 78.42], [10.15, 76.40],
-    [25.25, 55.36], [24.43, 54.65], [25.27, 51.60], [24.95, 46.69],
-    [51.47, -0.45], [49.00, 2.54], [50.03, 8.56], [52.31, 4.76], [40.48, -3.56],
-    [40.64, -73.77], [41.97, -87.90], [33.94, -118.40], [37.62, -122.37], [25.79, -80.28],
-    [1.36, 103.99], [35.54, 139.77], [22.30, 113.91], [13.69, 100.75], [-33.93, 151.17]
-  ];
-
-  majorCities.forEach(([lat, lon]) => {
-    const x = toX(lon);
-    const y = toY(lat);
-    const glow = ctx.createRadialGradient(x, y, 0, x, y, 6);
-    glow.addColorStop(0, 'rgba(56, 189, 248, 0.95)');
-    glow.addColorStop(0.5, 'rgba(6, 182, 212, 0.4)');
-    glow.addColorStop(1, 'rgba(6, 182, 212, 0)');
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(x, y, 6, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  return texture;
-}
+import { generateRealisticEarthTexture } from '../engine/earthTextureGenerator';
 
 export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
   const mountRef = useRef(null);
@@ -240,21 +141,21 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
 
     const globeRadius = 2.0;
 
-    // Base Textured Earth Sphere
-    const earthTexture = generateEarthTexture();
+    // Base Textured Earth Sphere (Photorealistic Earth with Biomes, Mountains & Clouds)
+    const earthTexture = generateRealisticEarthTexture();
     const sphereGeo = new THREE.SphereGeometry(globeRadius, 64, 64);
     const sphereMat = new THREE.MeshStandardMaterial({
       map: earthTexture,
-      roughness: 0.65,
-      metalness: 0.1,
-      emissive: 0x030814,
-      emissiveIntensity: 0.35,
+      roughness: 0.55,
+      metalness: 0.05,
+      emissive: 0x020612,
+      emissiveIntensity: 0.25,
     });
     const globeSphere = new THREE.Mesh(sphereGeo, sphereMat);
     globeGroup.add(globeSphere);
 
-    // Glowing Atmosphere Rim
-    const atmosGeo = new THREE.SphereGeometry(globeRadius * 1.14, 32, 32);
+    // Glowing Atmosphere Rim (Rayleigh blue/cyan troposphere scattering)
+    const atmosGeo = new THREE.SphereGeometry(globeRadius * 1.15, 32, 32);
     const atmosMat = new THREE.ShaderMaterial({
       vertexShader: `
         varying vec3 vNormal;
@@ -266,8 +167,8 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
       fragmentShader: `
         varying vec3 vNormal;
         void main() {
-          float intensity = pow(0.6 - dot(vNormal, vec3(0, 0, 1.0)), 2.2);
-          gl_FragColor = vec4(0.06, 0.71, 0.83, 1.0) * intensity * 1.4;
+          float intensity = pow(0.65 - dot(vNormal, vec3(0, 0, 1.0)), 2.0);
+          gl_FragColor = vec4(0.08, 0.72, 0.95, 1.0) * intensity * 1.6;
         }
       `,
       blending: THREE.AdditiveBlending,
@@ -277,12 +178,12 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     const atmosphere = new THREE.Mesh(atmosGeo, atmosMat);
     scene.add(atmosphere);
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+    // Lighting (Warm Sun Illumination + Soft Cosmic Ambient)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
     scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0xe0f2fe, 1.5);
-    sunLight.position.set(6, 4, 6);
+    const sunLight = new THREE.DirectionalLight(0xfff7ed, 1.8);
+    sunLight.position.set(7, 5, 6);
     scene.add(sunLight);
 
     // Airport Node Pins (Flightradar24 Global Airport Radar Green Dots)
