@@ -10,21 +10,21 @@ import {
 
 import AOCHeader from './components/AOCHeader';
 import RouteVisualizer from './components/RouteVisualizer';
+import LiveGlobeTracker from './components/LiveGlobeTracker';
 import FlightSetupTab from './components/FlightSetupTab';
 import FuelChainTab from './components/FuelChainTab';
 import OptimizerTab from './components/OptimizerTab';
 import WhatIfSimulator from './components/WhatIfSimulator';
 import FleetComparisonTab from './components/FleetComparisonTab';
 import OFPReleaseModal from './components/OFPReleaseModal';
-import { ShieldCheck, Info, Sparkles } from 'lucide-react';
 
 export default function App() {
-  // State: Selected Aircraft & City Pair (Default VIDP -> VABB, Delhi -> Mumbai as specified)
+  // State: Selected Aircraft & City Pair (Default VIDP -> VABB)
   const [aircraft, setAircraft] = useState(AIRCRAFT_PROFILES[0]); // A320neo
   const [origin, setOrigin] = useState(AIRPORTS[0]); // VIDP (Delhi)
   const [destination, setDestination] = useState(AIRPORTS[1]); // VABB (Mumbai)
   const [flightNumber, setFlightNumber] = useState('AF-320');
-  const [activeTab, setActiveTab] = useState('flight-setup');
+  const [activeTab, setActiveTab] = useState('live-radar'); // Open Live Globe by default
   const [isOFPOpen, setIsOFPOpen] = useState(false);
 
   // Flight parameters
@@ -62,6 +62,28 @@ export default function App() {
     return computeAlerts(plan, aircraft);
   }, [plan, aircraft]);
 
+  // Load selected live flight directly into the AeroFuel engine
+  const handleSelectFlightForDispatch = (flight) => {
+    const orig = getAirportByIcao(flight.originIcao) || origin;
+    const dest = getAirportByIcao(flight.destIcao) || destination;
+    const ac = getAircraftById(flight.aircraftId) || aircraft;
+
+    setOrigin(orig);
+    setDestination(dest);
+    setAircraft(ac);
+    setFlightNumber(flight.flightNo);
+    setInputs((prev) => ({
+      ...prev,
+      selectedFlightLevel: flight.altitudeFL,
+      windDirectionDeg: flight.windDeg,
+      windSpeedKt: flight.windSpeedKt,
+      payloadKg: Math.round(ac.maxPayloadKg * 0.75),
+    }));
+
+    // Switch to Optimizer tab
+    setActiveTab('optimizer');
+  };
+
   return (
     <div className="min-h-screen bg-[#080c14] text-slate-100 flex flex-col selection:bg-cyan-500 selection:text-black">
       {/* AOC Top Navigation Header */}
@@ -77,16 +99,24 @@ export default function App() {
 
       {/* Main Tactical Dashboard Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Tactical Route Visualizer & Wind Vector Bar (Always Visible on Top) */}
-        <RouteVisualizer
-          origin={origin}
-          destination={destination}
-          plan={plan}
-          aircraft={aircraft}
-        />
+        {/* Tactical Route Visualizer & Wind Vector Bar (Visible on non-radar tabs) */}
+        {activeTab !== 'live-radar' && (
+          <RouteVisualizer
+            origin={origin}
+            destination={destination}
+            plan={plan}
+            aircraft={aircraft}
+          />
+        )}
 
         {/* Tab Views */}
         <div className="transition-all duration-200">
+          {activeTab === 'live-radar' && (
+            <LiveGlobeTracker
+              onSelectFlightForDispatch={handleSelectFlightForDispatch}
+            />
+          )}
+
           {activeTab === 'flight-setup' && (
             <FlightSetupTab
               aircraft={aircraft}
@@ -155,9 +185,9 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="text-slate-400 font-semibold">AeroFuel AI Engine Online</span>
+            <span className="text-slate-400 font-semibold">AeroFuel AI 3D Radar & Engine Online</span>
             <span>•</span>
-            <span>Great Circle & ICAO Fuel Chain Architecture</span>
+            <span>Real-Time Fleet & Geodesic Navigation</span>
           </div>
 
           <div className="text-center md:text-right text-[11px] text-slate-500 max-w-xl">

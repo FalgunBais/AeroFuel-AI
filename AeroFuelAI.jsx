@@ -2,12 +2,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 
 /**
  * AeroFuel AI — Aircraft Fuel Optimization & Flight Planning Dashboard
- * Single-file standalone React deliverable.
+ * Single-file standalone React deliverable with Live Flight Fleet Tracker.
  * Zero external package requirements; works directly in React/Claude artifact environments.
  */
 
 // ==========================================
-// 1. DATA LAYER (AIRCRAFT & AIRPORTS)
+// 1. DATA LAYER (AIRCRAFT, AIRPORTS & LIVE FLIGHTS)
 // ==========================================
 const AIRPORTS = [
   { icao: 'VIDP', iata: 'DEL', name: 'Indira Gandhi Intl', city: 'Delhi', lat: 28.5665, lon: 77.1031, elevationFt: 777, defaultAlternate: 'VABB' },
@@ -18,6 +18,8 @@ const AIRPORTS = [
   { icao: 'OMDB', iata: 'DXB', name: 'Dubai International', city: 'Dubai', lat: 25.2532, lon: 55.3657, elevationFt: 62, defaultAlternate: 'OMAA' },
   { icao: 'EGLL', iata: 'LHR', name: 'London Heathrow', city: 'London', lat: 51.4700, lon: -0.4543, elevationFt: 83, defaultAlternate: 'EGKK' },
   { icao: 'KJFK', iata: 'JFK', name: 'John F. Kennedy Intl', city: 'New York', lat: 40.6413, lon: -73.7781, elevationFt: 13, defaultAlternate: 'KEWR' },
+  { icao: 'WSSS', iata: 'SIN', name: 'Singapore Changi', city: 'Singapore', lat: 1.3644, lon: 103.9915, elevationFt: 22, defaultAlternate: 'WMKK' },
+  { icao: 'RJTT', iata: 'HND', name: 'Tokyo Haneda', city: 'Tokyo', lat: 35.5494, lon: 139.7798, elevationFt: 35, defaultAlternate: 'RJAA' }
 ];
 
 const AIRCRAFT_PROFILES = [
@@ -105,6 +107,14 @@ const AIRCRAFT_PROFILES = [
     category: 'Turboprop',
     co2FactorKgPerKgFuel: 3.16,
   }
+];
+
+const LIVE_FLIGHTS = [
+  { flightNo: 'AF-320', airline: 'AeroFuel Express', aircraftId: 'a320neo', reg: 'VT-AFL', originIcao: 'VIDP', destIcao: 'VABB', altitudeFL: 360, groundSpeedKt: 462, progressPct: 45, fuelFlowKgHr: 2280, fuelRemainingKg: 6420, etaMin: 55 },
+  { flightNo: 'AI-101', airline: 'Air India', aircraftId: 'b787_9', reg: 'VT-ANX', originIcao: 'VIDP', destIcao: 'KJFK', altitudeFL: 390, groundSpeedKt: 498, progressPct: 62, fuelFlowKgHr: 5120, fuelRemainingKg: 38400, etaMin: 310 },
+  { flightNo: 'EK-500', airline: 'Emirates', aircraftId: 'b787_9', reg: 'A6-EXA', originIcao: 'OMDB', destIcao: 'EGLL', altitudeFL: 380, groundSpeedKt: 508, progressPct: 78, fuelFlowKgHr: 5400, fuelRemainingKg: 14200, etaMin: 85 },
+  { flightNo: '6E-204', airline: 'IndiGo', aircraftId: 'b737max8', reg: 'VT-MAX', originIcao: 'VOBL', destIcao: 'VIDP', altitudeFL: 370, groundSpeedKt: 440, progressPct: 35, fuelFlowKgHr: 2240, fuelRemainingKg: 7800, etaMin: 88 },
+  { flightNo: '9I-801', airline: 'Alliance Air', aircraftId: 'atr72_600', reg: 'VT-AIH', originIcao: 'VOMM', destIcao: 'VOBL', altitudeFL: 180, groundSpeedKt: 268, progressPct: 70, fuelFlowKgHr: 670, fuelRemainingKg: 1850, etaMin: 18 },
 ];
 
 // ==========================================
@@ -279,9 +289,11 @@ export default function AeroFuelAI() {
   const [aircraft, setAircraft] = useState(AIRCRAFT_PROFILES[0]);
   const [origin, setOrigin] = useState(AIRPORTS[0]); // VIDP
   const [destination, setDestination] = useState(AIRPORTS[1]); // VABB
-  const [activeTab, setActiveTab] = useState('setup');
+  const [flightNumber, setFlightNumber] = useState('AF-320');
+  const [activeTab, setActiveTab] = useState('radar');
   const [showOFP, setShowOFP] = useState(false);
   const [utcTime, setUtcTime] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [inputs, setInputs] = useState({
     windDirectionDeg: 280,
@@ -327,15 +339,28 @@ export default function AeroFuelAI() {
     });
   }, [aircraft, inputs, routeGeo]);
 
-  const fuelBreakdown = [
-    { name: 'Taxi', kg: plan.fuelChain.taxi, color: '#64748b' },
-    { name: 'Trip', kg: plan.fuelChain.trip, color: '#0284c7' },
-    { name: 'Contingency', kg: plan.fuelChain.contingency, color: '#06b6d4' },
-    { name: 'Alternate', kg: plan.fuelChain.alternate, color: '#38bdf8' },
-    { name: 'Final Reserve', kg: plan.fuelChain.finalReserve, color: '#eab308' },
-    { name: 'Holding', kg: plan.fuelChain.holding, color: '#f97316' },
-    { name: 'Extra', kg: plan.fuelChain.extra, color: '#a855f7' },
-  ];
+  const handleSelectFlight = (flt) => {
+    const orig = AIRPORTS.find(a => a.icao === flt.originIcao) || origin;
+    const dest = AIRPORTS.find(a => a.icao === flt.destIcao) || destination;
+    const ac = AIRCRAFT_PROFILES.find(a => a.id === flt.aircraftId) || aircraft;
+    setOrigin(orig);
+    setDestination(dest);
+    setAircraft(ac);
+    setFlightNumber(flt.flightNo);
+    setInputs(prev => ({
+      ...prev,
+      selectedFlightLevel: flt.altitudeFL,
+      payloadKg: Math.round(ac.maxPayloadKg * 0.75),
+    }));
+    setActiveTab('optimizer');
+  };
+
+  const filteredFlights = LIVE_FLIGHTS.filter(f => 
+    !searchQuery || 
+    f.flightNo.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    f.reg.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    f.airline.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen bg-[#080c14] text-slate-100 font-sans selection:bg-cyan-500 selection:text-black">
@@ -357,6 +382,8 @@ export default function AeroFuelAI() {
           </div>
 
           <div className="hidden sm:flex items-center space-x-4 text-xs font-mono bg-slate-900 px-3 py-1.5 rounded-full border border-slate-800">
+            <span className="text-cyan-400 font-bold">{flightNumber}</span>
+            <span className="text-slate-600">|</span>
             <span className="text-emerald-400">{origin.icao} → {destination.icao}</span>
             <span className="text-slate-600">|</span>
             <span className="text-sky-300">{aircraft.name}</span>
@@ -375,6 +402,7 @@ export default function AeroFuelAI() {
         {/* Tabs */}
         <div className="max-w-7xl mx-auto flex space-x-2 mt-3 pt-2 border-t border-slate-800/60 overflow-x-auto text-xs font-medium">
           {[
+            { id: 'radar', label: 'Live Radar & Fleet', badge: 'LIVE' },
             { id: 'setup', label: 'Flight Setup' },
             { id: 'fuel', label: 'Fuel Chain' },
             { id: 'optimizer', label: 'AI Optimizer' },
@@ -383,13 +411,18 @@ export default function AeroFuelAI() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 rounded-md transition whitespace-nowrap ${
+              className={`px-3 py-1.5 rounded-md transition whitespace-nowrap flex items-center space-x-1.5 ${
                 activeTab === tab.id
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              {tab.label}
+              <span>{tab.label}</span>
+              {tab.badge && (
+                <span className="px-1 py-0.2 text-[9px] font-bold bg-emerald-500/30 text-emerald-300 rounded border border-emerald-400/40">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -397,31 +430,53 @@ export default function AeroFuelAI() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-        {/* Route Visualizer Banner */}
-        <div className="bg-[#0c1424] border border-slate-800 rounded-xl p-4">
-          <div className="flex justify-between items-center text-xs font-mono text-slate-400 border-b border-slate-800 pb-2 mb-3">
-            <span>ROUTE: <strong className="text-white">{origin.city} ({origin.icao})</strong> to <strong className="text-white">{destination.city} ({destination.icao})</strong></span>
-            <span>DIST: <strong className="text-cyan-400">{routeGeo.distanceNm} NM</strong> | TRK: <strong className="text-cyan-400">{routeGeo.bearingDeg}°</strong> | GS: <strong className="text-emerald-400">{plan.groundSpeedKt} KT</strong></span>
-          </div>
-
-          <div className="h-20 w-full flex items-center justify-between px-6 relative bg-slate-950/50 rounded-lg">
-            <div className="text-center z-10">
-              <div className="w-4 h-4 rounded-full bg-emerald-400 mx-auto shadow-lg shadow-emerald-500/50"></div>
-              <span className="text-xs font-bold font-mono text-emerald-400 block mt-1">{origin.icao}</span>
-            </div>
-            
-            <div className="flex-1 mx-4 h-0.5 bg-gradient-to-r from-emerald-500 via-cyan-400 to-amber-500 relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-slate-900 border border-cyan-800 text-[10px] font-mono text-cyan-300 rounded">
-                CRZ FL{plan.parameters.selectedFlightLevel} • ETE {plan.flightTimeFormatted}
+        {/* Tab 0: Live Radar & Fleet Search */}
+        {activeTab === 'radar' && (
+          <div className="space-y-4">
+            <div className="bg-[#0c1424] border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-3">
+              <div>
+                <h2 className="text-sm font-bold font-mono text-white">Live Commercial Flights Telemetry Feed</h2>
+                <p className="text-xs text-slate-400">Select any flight to inspect telemetry or load into the fuel optimizer.</p>
               </div>
+              <input
+                type="text"
+                placeholder="Search flight # or reg..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white w-full sm:w-64"
+              />
             </div>
 
-            <div className="text-center z-10">
-              <div className="w-4 h-4 rounded-full bg-amber-400 mx-auto shadow-lg shadow-amber-500/50"></div>
-              <span className="text-xs font-bold font-mono text-amber-400 block mt-1">{destination.icao}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredFlights.map(flt => (
+                <div key={flt.flightNo} className="bg-[#0c1424] border border-slate-800 hover:border-cyan-500/50 p-4 rounded-xl space-y-3 font-mono text-xs transition">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-base text-cyan-300">{flt.flightNo}</span>
+                    <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded font-bold">
+                      {flt.progressPct}% ENROUTE
+                    </span>
+                  </div>
+                  <div className="text-slate-300">
+                    <p className="font-bold text-white">{flt.originIcao} → {flt.destIcao}</p>
+                    <p className="text-[11px] text-slate-400">{flt.airline} • {flt.reg}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-900/80 p-2 rounded border border-slate-800">
+                    <div>ALT: <strong className="text-cyan-400">FL{flt.altitudeFL}</strong></div>
+                    <div>GS: <strong className="text-emerald-400">{flt.groundSpeedKt} KT</strong></div>
+                    <div>BURN: <strong className="text-amber-400">{flt.fuelFlowKgHr} kg/h</strong></div>
+                    <div>ETA: <strong className="text-slate-200">~{flt.etaMin}m</strong></div>
+                  </div>
+                  <button
+                    onClick={() => handleSelectFlight(flt)}
+                    className="w-full bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 py-2 rounded-lg font-bold text-xs transition"
+                  >
+                    Select & Optimize Flight
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
-        </div>
+        )}
 
         {/* Tab 1: Setup */}
         {activeTab === 'setup' && (
@@ -547,9 +602,16 @@ export default function AeroFuelAI() {
                 ICAO Fuel Chain Breakdown (Total: {plan.fuelChain.blockFuel.toLocaleString()} kg)
               </h3>
               
-              {/* Waterfall visualizer */}
               <div className="space-y-2 font-mono text-xs">
-                {fuelBreakdown.map((item, idx) => (
+                {[
+                  { name: 'Taxi', kg: plan.fuelChain.taxi, color: '#64748b' },
+                  { name: 'Trip', kg: plan.fuelChain.trip, color: '#0284c7' },
+                  { name: 'Contingency', kg: plan.fuelChain.contingency, color: '#06b6d4' },
+                  { name: 'Alternate', kg: plan.fuelChain.alternate, color: '#38bdf8' },
+                  { name: 'Final Reserve', kg: plan.fuelChain.finalReserve, color: '#eab308' },
+                  { name: 'Holding', kg: plan.fuelChain.holding, color: '#f97316' },
+                  { name: 'Extra', kg: plan.fuelChain.extra, color: '#a855f7' },
+                ].map((item, idx) => (
                   <div key={idx} className="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800 flex justify-between items-center">
                     <div className="flex items-center space-x-2">
                       <span className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
@@ -687,6 +749,7 @@ export default function AeroFuelAI() {
 {`==================================================
         AEROFUEL AI — FLIGHT RELEASE (OFP)
 ==================================================
+FLIGHT: ${flightNumber}
 ROUTE: ${origin.icao} (${origin.city}) -> ${destination.icao} (${destination.city})
 AIRCRAFT: ${aircraft.name} (${aircraft.engine})
 DISTANCE: ${routeGeo.distanceNm} NM | TRACK: ${routeGeo.bearingDeg}°

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plane, Radio, Clock, ShieldAlert, FileText, Sparkles, Navigation } from 'lucide-react';
+import { Plane, Radio, Clock, ShieldAlert, FileText, Sparkles, Navigation, Globe } from 'lucide-react';
 
 export default function AOCHeader({ activeTab, setActiveTab, onOpenOFP, flightNumber, origin, destination, aircraft }) {
   const [utcTime, setUtcTime] = useState('');
@@ -15,6 +15,7 @@ export default function AOCHeader({ activeTab, setActiveTab, onOpenOFP, flightNu
   }, []);
 
   const navItems = [
+    { id: 'live-radar', label: '3D Live Globe', icon: Globe, badge: 'LIVE' },
     { id: 'flight-setup', label: 'Flight Setup', icon: Navigation },
     { id: 'fuel-plan', label: 'Fuel Chain', icon: Plane },
     { id: 'optimizer', label: 'AI Optimizer', icon: Sparkles, badge: 'AI' },
@@ -42,7 +43,7 @@ export default function AOCHeader({ activeTab, setActiveTab, onOpenOFP, flightNu
                   AI AOC 2.0
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">Aviation Fuel Planning & Cruise Altitude Optimization</p>
+              <p className="text-xs text-slate-400 hidden sm:block">Real-Time Aircraft Radar, Fuel Planning & Cruise Optimization</p>
             </div>
           </div>
 
@@ -102,7 +103,11 @@ export default function AOCHeader({ activeTab, setActiveTab, onOpenOFP, flightNu
                 <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-cyan-400' : 'text-slate-400'}`} />
                 <span>{tab.label}</span>
                 {tab.badge && (
-                  <span className="px-1 py-0.2 text-[9px] font-bold uppercase rounded bg-cyan-500/30 text-cyan-300 border border-cyan-400/40">
+                  <span className={`px-1 py-0.2 text-[9px] font-bold uppercase rounded ${
+                    tab.badge === 'LIVE'
+                      ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 animate-pulse'
+                      : 'bg-cyan-500/30 text-cyan-300 border border-cyan-400/40'
+                  }`}>
                     {tab.badge}
                   </span>
                 )}
