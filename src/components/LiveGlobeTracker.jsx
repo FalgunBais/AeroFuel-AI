@@ -129,6 +129,8 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
   const [autoRotate, setAutoRotate] = useState(true);
   const [flights, setFlights] = useState(INITIAL_LIVE_FLIGHTS);
   const [hoveredFlight, setHoveredFlight] = useState(null);
+  const [hoveredAirport, setHoveredAirport] = useState(null);
+  const [showAirports, setShowAirports] = useState(true);
   const [mouseScreenPos, setMouseScreenPos] = useState({ x: 0, y: 0 });
   const [showFilters, setShowFilters] = useState(false);
 
@@ -137,6 +139,8 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
   const rendererRef = useRef(null);
   const cameraRef = useRef(null);
   const globeGroupRef = useRef(null);
+  const airportPinsGroupRef = useRef(null);
+  const airportMeshesRef = useRef([]); // Airport raycasting targets
   const flightObjectsMapRef = useRef(new Map()); // Map flightNo -> { mesh, halo, arcLine, curve }
   const isDraggingRef = useRef(false);
   const prevMousePosRef = useRef({ x: 0, y: 0 });
@@ -144,6 +148,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
   const targetGlobeRotationRef = useRef({ x: 0, y: 0 });
   const autoRotateRef = useRef(autoRotate);
   const hoveredFlightRef = useRef(null);
+  const hoveredAirportRef = useRef(null);
   const selectedFlightNumRef = useRef(selectedFlightNumber);
 
   // Sync refs with state
@@ -280,17 +285,35 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     sunLight.position.set(6, 4, 6);
     scene.add(sunLight);
 
-    // Airport Node Pins
+    // Airport Node Pins (Flightradar24 Global Airport Radar Green Dots)
     const airportPinsGroup = new THREE.Group();
     globeGroup.add(airportPinsGroup);
+    airportPinsGroupRef.current = airportPinsGroup;
+    airportMeshesRef.current = [];
+
+    const dotGeo = new THREE.SphereGeometry(0.022, 10, 10);
+    const beaconRingGeo = new THREE.RingGeometry(0.026, 0.038, 16);
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+    const beaconMat = new THREE.MeshBasicMaterial({
+      color: 0x34d399,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.7,
+    });
 
     AIRPORTS.forEach((apt) => {
-      const pos = latLonToVector3(apt.lat, apt.lon, globeRadius * 1.005);
-      const dotGeo = new THREE.SphereGeometry(0.016, 8, 8);
-      const dotMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+      const pos = latLonToVector3(apt.lat, apt.lon, globeRadius * 1.008);
       const dot = new THREE.Mesh(dotGeo, dotMat);
       dot.position.copy(pos);
+      dot.userData = { isAirport: true, airport: apt };
+
+      const ring = new THREE.Mesh(beaconRingGeo, beaconMat);
+      ring.position.copy(pos);
+      ring.lookAt(pos.clone().multiplyScalar(2));
+
       airportPinsGroup.add(dot);
+      airportPinsGroup.add(ring);
+      airportMeshesRef.current.push(dot);
     });
 
     // 3. Shared Reusable Geometries & Materials for Flights
@@ -384,7 +407,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       setMouseScreenPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
 
-      // Fast Raycast check on hover
+      // Fast Raycast check on hover (Aircraft + World Airports)
       raycaster.setFromCamera(mouse, camera);
       const meshes = Array.from(flightObjectsMapRef.current.values()).map((v) => v.mesh);
       const intersects = raycaster.intersectObjects(meshes);
@@ -394,9 +417,22 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
         const flt = INITIAL_LIVE_FLIGHTS.find((f) => f.flightNo === fNo);
         hoveredFlightRef.current = flt;
         setHoveredFlight(flt);
+        hoveredAirportRef.current = null;
+        setHoveredAirport(null);
       } else {
         hoveredFlightRef.current = null;
         setHoveredFlight(null);
+
+        // Check Airport Pins
+        const aptIntersects = raycaster.intersectObjects(airportMeshesRef.current);
+        if (aptIntersects.length > 0) {
+          const apt = aptIntersects[0].object.userData.airport;
+          hoveredAirportRef.current = apt;
+          setHoveredAirport(apt);
+        } else {
+          hoveredAirportRef.current = null;
+          setHoveredAirport(null);
+        }
       }
 
       if (!isDraggingRef.current) return;
@@ -431,6 +467,20 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
       if (intersects.length > 0) {
         const fNo = intersects[0].object.userData.flightNo;
         if (fNo) setSelectedFlightNumber(fNo);
+        return;
+      }
+
+      // Check Airport Click (Smooth Camera Focus on Airport)
+      const aptIntersects = raycaster.intersectObjects(airportMeshesRef.current);
+      if (aptIntersects.length > 0) {
+        const apt = aptIntersects[0].object.userData.airport;
+        if (apt) {
+          const pos = latLonToVector3(apt.lat, apt.lon, globeRadius);
+          const targetY = -Math.atan2(pos.x, pos.z);
+          globeGroup.rotation.y = targetY;
+          globeGroup.rotation.x = ((apt.lat * Math.PI) / 180) * 0.4;
+          setHoveredAirport(apt);
+        }
       }
     };
 
@@ -568,9 +618,13 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono">
                 {filteredFlights.length} / {flights.length} AIRBORNE
               </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 font-mono hidden sm:inline-flex items-center space-x-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>{AIRPORTS.length} AIRPORTS (GREEN BEACONS)</span>
+              </span>
             </div>
             <p className="text-xs text-slate-400">
-              Silky smooth 60 FPS flight radar: click any aircraft on the globe or list to inspect real-time fuel and avionics.
+              Flightradar24-grade 3D global air traffic: click any aircraft or green airport beacon to inspect telemetry and runways.
             </p>
           </div>
         </div>
@@ -679,22 +733,14 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
           {/* Globe Canvas Container */}
           <div ref={mountRef} className="w-full h-full min-h-[520px] flex-1 cursor-grab active:cursor-grabbing select-none" />
 
-          {/* Interactive Hover Tooltip */}
-          {hoveredFlight && (
-            <div
-              className="absolute z-20 pointer-events-none bg-slate-900/95 border border-cyan-500/80 rounded-lg px-3 py-2 shadow-2xl font-mono text-xs text-white backdrop-blur space-y-0.5"
-              style={{ left: `${mouseScreenPos.x + 15}px`, top: `${mouseScreenPos.y - 45}px` }}
-            >
-              <div className="flex items-center space-x-2">
-                <Plane className="w-3 h-3 text-cyan-400 transform -rotate-45" />
-          {/* Hover Tooltip Capsule */}
+          {/* Flight Hover Tooltip Capsule */}
           {hoveredFlight && (
             <div
               className="absolute z-20 pointer-events-none bg-[#090e1a]/95 border border-cyan-500/80 rounded-xl p-3 shadow-2xl backdrop-blur-md font-mono text-xs text-white max-w-xs transition-opacity duration-150"
               style={{
-                left: `${mousePos.x + 16}px`,
-                top: `${mousePos.y + 16}px`,
-                transform: mousePos.x > 500 ? 'translateX(-100%)' : 'none',
+                left: `${mouseScreenPos.x + 16}px`,
+                top: `${mouseScreenPos.y + 16}px`,
+                transform: mouseScreenPos.x > 450 ? 'translateX(-100%)' : 'none',
               }}
             >
               <div className="flex items-center justify-between space-x-3 mb-1">
@@ -709,6 +755,36 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
               <div className="text-[10px] text-slate-400 pt-1 mt-1 border-t border-slate-800 flex justify-between font-mono">
                 <span>FL{hoveredFlight.altitudeFL} • {hoveredFlight.groundSpeedKt} KT</span>
                 <span className="text-emerald-300 font-bold">ETA: ~{hoveredFlight.etaMin}m</span>
+              </div>
+            </div>
+          )}
+
+          {/* Airport Hover Tooltip Capsule (Green Radar Marker) */}
+          {hoveredAirport && !hoveredFlight && (
+            <div
+              className="absolute z-20 pointer-events-none bg-[#04130d]/95 border border-emerald-500/90 rounded-xl p-3 shadow-2xl backdrop-blur-md font-mono text-xs text-emerald-300 max-w-xs transition-opacity duration-150"
+              style={{
+                left: `${mouseScreenPos.x + 16}px`,
+                top: `${mouseScreenPos.y + 16}px`,
+                transform: mouseScreenPos.x > 450 ? 'translateX(-100%)' : 'none',
+              }}
+            >
+              <div className="flex items-center justify-between space-x-2 mb-1">
+                <div className="flex items-center space-x-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                  <span className="font-bold text-white text-sm">{hoveredAirport.icao}</span>
+                  <span className="text-emerald-400 font-bold">({hoveredAirport.iata})</span>
+                </div>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-700 font-bold">
+                  AIRPORT
+                </span>
+              </div>
+              <div className="text-slate-100 font-sans font-bold text-xs">{hoveredAirport.name}</div>
+              <div className="text-slate-400 text-[11px] font-sans">{hoveredAirport.city}, {hoveredAirport.country}</div>
+              <div className="text-[10px] text-slate-400 pt-1.5 mt-1 border-t border-emerald-900/60 grid grid-cols-2 gap-1 font-mono">
+                <span>Elev: <strong className="text-slate-200">{hoveredAirport.elevationFt} ft</strong></span>
+                <span>Rwy: <strong className="text-slate-200">{hoveredAirport.runways || '09/27'}</strong></span>
+                <span className="col-span-2 text-emerald-400/80">Click to rotate & focus camera</span>
               </div>
             </div>
           )}
