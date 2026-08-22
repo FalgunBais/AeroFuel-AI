@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plane, Radio, Clock, ShieldAlert, FileText, Sparkles, Navigation, Globe } from 'lucide-react';
+import { Plane, Radio, Clock, ShieldAlert, FileText, Sparkles, Navigation, Globe, ArrowRight, Timer } from 'lucide-react';
 
-export default function AOCHeader({ activeTab, setActiveTab, onOpenOFP, flightNumber, origin, destination, aircraft }) {
+export default function AOCHeader({ activeTab, setActiveTab, onOpenOFP, flightNumber, origin, destination, aircraft, plan }) {
   const [utcTime, setUtcTime] = useState('');
 
   useEffect(() => {
@@ -24,7 +24,7 @@ export default function AOCHeader({ activeTab, setActiveTab, onOpenOFP, flightNu
   ];
 
   return (
-    <header className="border-b border-slate-800 bg-[#0a0f1d]/90 backdrop-blur-md sticky top-0 z-40">
+    <header className="border-b border-slate-800 bg-[#0a0f1d]/95 backdrop-blur-md sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Brand & Badge */}
@@ -43,29 +43,53 @@ export default function AOCHeader({ activeTab, setActiveTab, onOpenOFP, flightNu
                   AI AOC 2.0
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">Real-Time Aircraft Radar, Fuel Planning & Cruise Optimization</p>
+              <p className="text-xs text-slate-400 hidden sm:block">Aviation Operations Center & 3D Flight Dispatch System</p>
             </div>
           </div>
 
           {/* Center Tactical Status Banner */}
-          <div className="hidden lg:flex items-center space-x-6 bg-slate-900/80 border border-slate-800/80 rounded-full px-4 py-1.5 text-xs font-mono">
+          <div className="hidden lg:flex items-center space-x-4 bg-slate-900/90 border border-slate-800 rounded-full px-4 py-1.5 text-xs font-mono shadow-inner">
             <div className="flex items-center space-x-1.5 text-slate-300">
               <span className="text-slate-500">FLT:</span>
               <span className="text-cyan-300 font-bold">{flightNumber}</span>
             </div>
-            <div className="w-px h-3 bg-slate-700"></div>
-            <div className="flex items-center space-x-1.5 text-slate-300">
+            
+            <div className="w-px h-3.5 bg-slate-700"></div>
+            
+            {/* Origin & Destination with Airport Name Tooltip */}
+            <div className="flex items-center space-x-2 text-slate-300">
               <span className="text-slate-500">ROUTE:</span>
-              <span className="text-emerald-400 font-semibold">{origin.icao}</span>
-              <span className="text-slate-500">→</span>
-              <span className="text-emerald-400 font-semibold">{destination.icao}</span>
+              <span className="text-emerald-400 font-bold" title={`${origin.name} (${origin.city}, ${origin.country})`}>
+                {origin.iata || origin.icao}
+              </span>
+              <ArrowRight className="w-3 h-3 text-slate-500" />
+              <span className="text-emerald-400 font-bold" title={`${destination.name} (${destination.city}, ${destination.country})`}>
+                {destination.iata || destination.icao}
+              </span>
+              <span className="text-[10px] text-slate-400 max-w-[130px] truncate hidden xl:inline">
+                ({origin.city} → {destination.city})
+              </span>
             </div>
-            <div className="w-px h-3 bg-slate-700"></div>
+
+            {/* Calculated ETA */}
+            {plan?.etaFormatted && (
+              <>
+                <div className="w-px h-3.5 bg-slate-700"></div>
+                <div className="flex items-center space-x-1.5 text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-800/40">
+                  <Timer className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>ETA: <strong>{plan.etaFormatted}</strong></span>
+                  <span className="text-[10px] text-slate-400 font-normal">({plan.flightTimeFormatted})</span>
+                </div>
+              </>
+            )}
+
+            <div className="w-px h-3.5 bg-slate-700"></div>
             <div className="flex items-center space-x-1.5 text-slate-300">
               <span className="text-slate-500">ACFT:</span>
               <span className="text-sky-300">{aircraft.name}</span>
             </div>
-            <div className="w-px h-3 bg-slate-700"></div>
+
+            <div className="w-px h-3.5 bg-slate-700"></div>
             <div className="flex items-center space-x-1.5 text-amber-300">
               <Clock className="w-3.5 h-3.5 text-amber-400" />
               <span>{utcTime}</span>

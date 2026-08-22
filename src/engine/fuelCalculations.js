@@ -165,6 +165,21 @@ export function computeFuelPlan(aircraft, inputs) {
   const co2TripKg = Math.round(tripFuelKg * aircraft.co2FactorKgPerKgFuel);
   const co2TotalKg = Math.round(blockFuelKg * aircraft.co2FactorKgPerKgFuel);
 
+  // 8. Timings & Calculated ETA
+  const now = new Date();
+  const depHour = inputs.departureHour !== undefined ? inputs.departureHour : now.getUTCHours();
+  const depMin = inputs.departureMinute !== undefined ? inputs.departureMinute : now.getUTCMinutes();
+  const depTotalMins = depHour * 60 + depMin;
+  const airborneMins = flightTimeMinutes;
+  const blockTimeMinutes = airborneMins + taxiTimeMin + 8; // taxi-out + flight + taxi-in
+
+  const arrTotalMins = (depTotalMins + taxiTimeMin + airborneMins) % (24 * 60);
+  const arrHour = Math.floor(arrTotalMins / 60);
+  const arrMinute = arrTotalMins % 60;
+
+  const depFormatted = `${String(depHour).padStart(2, '0')}:${String(depMin).padStart(2, '0')} Z`;
+  const etaFormatted = `${String(arrHour).padStart(2, '0')}:${String(arrMinute).padStart(2, '0')} Z`;
+
   return {
     distanceNm,
     bearingDeg,
@@ -174,6 +189,10 @@ export function computeFuelPlan(aircraft, inputs) {
     flightTimeHours: totalFlightTimeHours,
     flightTimeMinutes,
     flightTimeFormatted: `${Math.floor(flightTimeMinutes / 60)}h ${flightTimeMinutes % 60}m`,
+    blockTimeMinutes,
+    blockTimeFormatted: `${Math.floor(blockTimeMinutes / 60)}h ${blockTimeMinutes % 60}m`,
+    departureTimeFormatted: depFormatted,
+    etaFormatted: etaFormatted,
     effectiveCruiseBurnRateKgHr: Math.round(effectiveCruiseBurnRateKgHr),
     fuelChain: {
       taxi: taxiFuelKg,

@@ -18,15 +18,17 @@ FLIGHT: ${flightNumber}       DATE: ${utcDate}       RELEASE TIME: ${utcTime}
 AIRCRAFT: ${aircraft.name.toUpperCase()} (${aircraft.type})  REG: VT-AFL
 ENGINES: ${aircraft.engine}
 
-ROUTING:
-  ORIGIN:      ${origin.icao} (${origin.iata}) - ${origin.city.toUpperCase()} (ELEV ${origin.elevationFt} FT)
-  DESTINATION: ${destination.icao} (${destination.iata}) - ${destination.city.toUpperCase()} (ELEV ${destination.elevationFt} FT)
-  ALTERNATE:   ${origin.defaultAlternate}
-  GREAT CIRCLE DISTANCE: ${plan.distanceNm} NM
-  INITIAL TRUE TRACK:    ${plan.bearingDeg}°
-  CRUISE ALTITUDE:       FL${plan.parameters.selectedFlightLevel} (${(plan.parameters.selectedFlightLevel * 100).toLocaleString()} FT)
-  CRUISE SPEED:          TAS ${plan.tas} KT / GS ${plan.groundSpeedKt} KT
-  ESTIMATED TIME ENROUTE: ${plan.flightTimeFormatted}
+ROUTING & SCHEDULE:
+  ORIGIN (DEP): ${origin.icao} (${origin.iata || '---'}) - ${origin.name.toUpperCase()}
+                ${origin.city.toUpperCase()}, ${origin.country.toUpperCase()} (ELEV ${origin.elevationFt} FT, RWY ${origin.runways || '09/27'})
+  DEST (ARR):   ${destination.icao} (${destination.iata || '---'}) - ${destination.name.toUpperCase()}
+                ${destination.city.toUpperCase()}, ${destination.country.toUpperCase()} (ELEV ${destination.elevationFt} FT, RWY ${destination.runways || '09/27'})
+  ALTERNATE:    ${destination.defaultAlternate || 'VOBL'} (DIVERSION RESERVE: ${plan.parameters.alternateDistanceNm} NM)
+  SCHEDULE:     DEP ${plan.departureTimeFormatted || '12:00 Z'} | ARR (ETA) ${plan.etaFormatted || '14:15 Z'}
+  AIRBORNE EET: ${plan.flightTimeFormatted} | BLOCK TIME: ${plan.blockTimeFormatted || plan.flightTimeFormatted}
+  GREAT CIRCLE: ${plan.distanceNm} NM (INITIAL TRUE TRACK: ${plan.bearingDeg}°)
+  CRUISE LVL:   FL${plan.parameters.selectedFlightLevel} (${(plan.parameters.selectedFlightLevel * 100).toLocaleString()} FT)
+  SPEED:        TAS ${plan.tas} KT / GS ${plan.groundSpeedKt} KT
 
 WIND & ATMOSPHERE:
   ENROUTE WIND: ${plan.wind.windDirection}° / ${plan.wind.windSpeedKt} KT (${plan.wind.tailwindKt > 0 ? `+${plan.wind.tailwindKt} KT TW` : `-${plan.wind.headwindKt} KT HW`}, ${plan.wind.crosswindKt} KT ${plan.wind.crosswindSide} XW)

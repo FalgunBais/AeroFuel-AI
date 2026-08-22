@@ -687,33 +687,55 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
             >
               <div className="flex items-center space-x-2">
                 <Plane className="w-3 h-3 text-cyan-400 transform -rotate-45" />
-                <span className="font-bold text-cyan-300">{hoveredFlight.flightNo}</span>
-                <span className="text-[10px] text-slate-400">({hoveredFlight.airline})</span>
+          {/* Hover Tooltip Capsule */}
+          {hoveredFlight && (
+            <div
+              className="absolute z-20 pointer-events-none bg-[#090e1a]/95 border border-cyan-500/80 rounded-xl p-3 shadow-2xl backdrop-blur-md font-mono text-xs text-white max-w-xs transition-opacity duration-150"
+              style={{
+                left: `${mousePos.x + 16}px`,
+                top: `${mousePos.y + 16}px`,
+                transform: mousePos.x > 500 ? 'translateX(-100%)' : 'none',
+              }}
+            >
+              <div className="flex items-center justify-between space-x-3 mb-1">
+                <span className="font-bold text-cyan-300 text-sm">{hoveredFlight.flightNo}</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-800">
+                  {hoveredFlight.airline}
+                </span>
               </div>
-              <div className="text-[11px] text-slate-300">
-                {hoveredFlight.originIcao} → {hoveredFlight.destIcao} • <span className="text-emerald-400">FL{hoveredFlight.altitudeFL}</span> • <span className="text-amber-300">{hoveredFlight.groundSpeedKt} KT</span>
+              <div className="text-[11px] text-slate-200 font-sans font-medium">
+                <strong className="text-emerald-400 font-mono">{hoveredFlight.originIcao}</strong> ({getAirportByIcao(hoveredFlight.originIcao)?.city || hoveredFlight.originIcao}) ➔ <strong className="text-amber-400 font-mono">{hoveredFlight.destIcao}</strong> ({getAirportByIcao(hoveredFlight.destIcao)?.city || hoveredFlight.destIcao})
+              </div>
+              <div className="text-[10px] text-slate-400 pt-1 mt-1 border-t border-slate-800 flex justify-between font-mono">
+                <span>FL{hoveredFlight.altitudeFL} • {hoveredFlight.groundSpeedKt} KT</span>
+                <span className="text-emerald-300 font-bold">ETA: ~{hoveredFlight.etaMin}m</span>
               </div>
             </div>
           )}
 
           {/* Tactical Active Flight Floating Capsule */}
-          <div className="absolute top-4 left-4 bg-slate-900/90 border border-slate-700/80 backdrop-blur-md rounded-xl p-3 shadow-xl max-w-xs font-mono text-xs space-y-1">
+          <div className="absolute top-4 left-4 bg-slate-900/95 border border-slate-700/80 backdrop-blur-md rounded-xl p-3.5 shadow-xl max-w-sm font-mono text-xs space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="text-cyan-400 font-bold text-sm">{activeFlight.flightNo}</span>
               <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
                 {activeFlight.status}
               </span>
             </div>
-            <div className="flex items-center space-x-2 text-slate-300">
-              <span className="text-white font-bold">{activeFlight.originIcao}</span>
-              <span className="text-slate-500">→</span>
-              <span className="text-white font-bold">{activeFlight.destIcao}</span>
-              <span className="text-slate-500">({originApt?.city} to {destApt?.city})</span>
+            <div className="text-slate-200 font-sans text-xs">
+              <div className="flex items-center space-x-1.5">
+                <span className="text-emerald-400 font-bold font-mono">{activeFlight.originIcao}</span>
+                <span className="text-slate-400 text-[11px]">({originApt?.name || originApt?.city})</span>
+              </div>
+              <div className="flex items-center space-x-1.5 text-slate-400 text-[10px]">
+                <span>➔ ARR:</span>
+                <span className="text-amber-400 font-bold font-mono">{activeFlight.destIcao}</span>
+                <span>({destApt?.name || destApt?.city})</span>
+              </div>
             </div>
-            <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between">
+            <div className="text-[11px] text-slate-400 pt-1.5 border-t border-slate-800 flex justify-between">
               <span>CRZ: <strong className="text-cyan-300">FL{activeFlight.altitudeFL}</strong></span>
               <span>GS: <strong className="text-emerald-300">{activeFlight.groundSpeedKt} KT</strong></span>
-              <span>PROG: <strong className="text-amber-300">{activeFlight.progressPct}%</strong></span>
+              <span>ETA: <strong className="text-emerald-400">~{activeFlight.etaMin}m ({activeFlight.progressPct}%)</strong></span>
             </div>
           </div>
 
@@ -745,26 +767,30 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
               </span>
             </div>
 
-            {/* City Pair Route Card */}
-            <div className="bg-slate-900/90 rounded-xl p-3 border border-slate-800 space-y-2">
+            {/* City Pair Route Card with Full Airport Names */}
+            <div className="bg-slate-900/90 rounded-xl p-3 border border-slate-800 space-y-2.5">
               <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xl font-bold text-emerald-400">{activeFlight.originIcao}</span>
-                  <span className="text-[10px] text-slate-400 block">{originApt?.city} ({originApt?.iata})</span>
+                <div className="max-w-[45%]">
+                  <span className="text-lg font-bold text-emerald-400 block">{activeFlight.originIcao} / {originApt?.iata || '---'}</span>
+                  <span className="text-xs text-slate-200 font-sans font-bold line-clamp-1">{originApt?.city || 'Origin'}</span>
+                  <span className="text-[10px] text-slate-400 font-sans line-clamp-1">{originApt?.name || ''}</span>
                 </div>
-                <div className="flex-1 mx-3 text-center">
-                  <span className="text-[10px] text-slate-500 uppercase block">In-Flight</span>
-                  <div className="w-full h-0.5 bg-slate-700 relative my-1">
+
+                <div className="flex-1 mx-2 text-center">
+                  <span className="text-[9px] text-slate-400 uppercase block font-bold">Enroute</span>
+                  <div className="w-full h-1 bg-slate-700 rounded-full relative my-1 overflow-hidden">
                     <div
-                      className="absolute top-0 left-0 h-full bg-cyan-400 transition-all duration-300"
+                      className="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-amber-400 transition-all duration-300"
                       style={{ width: `${activeFlight.progressPct}%` }}
                     />
                   </div>
                   <span className="text-[10px] text-cyan-300 font-bold">{activeFlight.progressPct}%</span>
                 </div>
-                <div className="text-right">
-                  <span className="text-xl font-bold text-amber-400">{activeFlight.destIcao}</span>
-                  <span className="text-[10px] text-slate-400 block">{destApt?.city} ({destApt?.iata})</span>
+
+                <div className="text-right max-w-[45%]">
+                  <span className="text-lg font-bold text-amber-400 block">{activeFlight.destIcao} / {destApt?.iata || '---'}</span>
+                  <span className="text-xs text-slate-200 font-sans font-bold line-clamp-1">{destApt?.city || 'Destination'}</span>
+                  <span className="text-[10px] text-slate-400 font-sans line-clamp-1">{destApt?.name || ''}</span>
                 </div>
               </div>
             </div>

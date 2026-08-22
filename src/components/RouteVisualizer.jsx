@@ -131,24 +131,30 @@ export default function RouteVisualizer({ origin, destination, plan, aircraft })
               {destination.city}
             </text>
 
-            {/* Flight Info Floating Capsule */}
-            <g transform={`translate(${(startX + endX) / 2 - 80}, ${startY - 40})`}>
-              <rect width="160" height="24" rx="12" fill="#0f172a" stroke="#1e293b" strokeWidth="1" />
-              <text x="80" y="16" fill="#e2e8f0" fontSize="10" textAnchor="middle" fontFamily="monospace">
-                GS: {groundSpeedKt} KT | ETE: {plan.flightTimeFormatted}
+            {/* Flight Info Floating Capsule with ETA */}
+            <g transform={`translate(${(startX + endX) / 2 - 110}, ${startY - 45})`}>
+              <rect width="220" height="28" rx="14" fill="#0f172a" stroke="#0ea5e9" strokeWidth="1.2" opacity="0.95" />
+              <text x="110" y="18" fill="#e2e8f0" fontSize="10" textAnchor="middle" fontFamily="monospace" fontWeight="bold">
+                GS: {groundSpeedKt} KT | ETE: {plan.flightTimeFormatted} {plan.etaFormatted ? `| ETA: ${plan.etaFormatted}` : ''}
               </text>
             </g>
           </svg>
         </div>
 
-        <div className="flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 px-1">
-          <div className="flex items-center space-x-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>DEP: {origin.name} ({origin.elevationFt} ft)</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-300 border-t border-slate-800/80 pt-2 px-1">
+          <div className="flex items-center space-x-2 bg-slate-900/60 p-1.5 rounded border border-slate-800">
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 flex-shrink-0"></span>
+            <div className="truncate">
+              <span className="text-emerald-400 font-bold font-mono">DEP: {origin.iata || origin.icao}</span>
+              <span className="text-slate-400 font-sans ml-1 truncate"> — {origin.name} ({origin.city}, {origin.country} • {origin.elevationFt} ft)</span>
+            </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
-            <span>ARR: {destination.name} ({destination.elevationFt} ft)</span>
+          <div className="flex items-center space-x-2 bg-slate-900/60 p-1.5 rounded border border-slate-800">
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 flex-shrink-0"></span>
+            <div className="truncate">
+              <span className="text-amber-400 font-bold font-mono">ARR: {destination.iata || destination.icao}</span>
+              <span className="text-slate-400 font-sans ml-1 truncate"> — {destination.name} ({destination.city}, {destination.country} • {destination.elevationFt} ft)</span>
+            </div>
           </div>
         </div>
       </div>

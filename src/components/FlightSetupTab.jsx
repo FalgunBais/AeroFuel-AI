@@ -161,8 +161,8 @@ export default function FlightSetupTab({
           </div>
 
           {/* Route Origin & Destination Card */}
-          <div className="bg-[#0c1424] border border-slate-800 rounded-xl p-5 shadow-lg">
-            <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-800">
+          <div className="bg-[#0c1424] border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center space-x-2">
                 <MapPin className="w-4 h-4 text-emerald-400" />
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-mono">
@@ -171,63 +171,125 @@ export default function FlightSetupTab({
               </div>
               <button
                 onClick={handleAirportSwap}
-                className="text-[10px] text-cyan-400 hover:text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/60 px-2 py-0.5 rounded border border-cyan-800/40 transition-all font-mono"
+                className="text-[11px] text-cyan-400 hover:text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/60 px-2.5 py-1 rounded border border-cyan-800/40 transition-all font-mono flex items-center space-x-1"
               >
-                ⇄ Swap Pair
+                <span>⇄ Swap Direction</span>
               </button>
             </div>
 
+            {/* Selectors */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">Origin (DEP)</label>
+                <label className="block text-[11px] text-slate-400 mb-1 font-mono uppercase font-semibold">
+                  Source / Origin (DEP)
+                </label>
                 <select
                   value={origin.icao}
                   onChange={(e) => {
                     const sel = AIRPORTS.find((a) => a.icao === e.target.value);
                     if (sel) setOrigin(sel);
                   }}
-                  className="w-full bg-[#080c14] border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+                  className="w-full bg-[#080c14] border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
                 >
                   {AIRPORTS.map((apt) => (
                     <option key={apt.icao} value={apt.icao}>
-                      {apt.icao} ({apt.iata}) - {apt.city}
+                      {apt.iata || apt.icao} — {apt.city} ({apt.name})
                     </option>
                   ))}
                 </select>
-                <span className="text-[10px] text-slate-500 mt-1 block">Elev: {origin.elevationFt} ft</span>
               </div>
 
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">Destination (ARR)</label>
+                <label className="block text-[11px] text-slate-400 mb-1 font-mono uppercase font-semibold">
+                  Destination / Arrival (ARR)
+                </label>
                 <select
                   value={destination.icao}
                   onChange={(e) => {
                     const sel = AIRPORTS.find((a) => a.icao === e.target.value);
                     if (sel) setDestination(sel);
                   }}
-                  className="w-full bg-[#080c14] border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+                  className="w-full bg-[#080c14] border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
                 >
                   {AIRPORTS.map((apt) => (
                     <option key={apt.icao} value={apt.icao}>
-                      {apt.icao} ({apt.iata}) - {apt.city}
+                      {apt.iata || apt.icao} — {apt.city} ({apt.name})
                     </option>
                   ))}
                 </select>
-                <span className="text-[10px] text-slate-500 mt-1 block">Elev: {destination.elevationFt} ft</span>
+              </div>
+            </div>
+
+            {/* Detailed Airport Metadata Panels */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              {/* Origin Airport Badge */}
+              <div className="p-3 rounded-lg bg-slate-900/80 border border-emerald-900/50 space-y-1.5 text-xs font-mono">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Departure Airport</span>
+                  <span className="px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 text-[10px] font-bold border border-emerald-800/40">
+                    {origin.icao} / {origin.iata}
+                  </span>
+                </div>
+                <div className="text-slate-100 font-bold font-sans text-xs line-clamp-1">{origin.name}</div>
+                <div className="text-slate-400 text-[11px] font-sans">{origin.city}, {origin.country}</div>
+                <div className="pt-1.5 border-t border-slate-800/80 grid grid-cols-2 gap-1 text-[10px] text-slate-400">
+                  <span>Elev: <strong className="text-slate-200">{origin.elevationFt} ft</strong></span>
+                  <span>Rwy: <strong className="text-slate-200">{origin.runways || '09/27'}</strong></span>
+                  <span className="col-span-2 text-slate-500 truncate">Coords: {origin.lat.toFixed(4)}°, {origin.lon.toFixed(4)}°</span>
+                </div>
+              </div>
+
+              {/* Destination Airport Badge */}
+              <div className="p-3 rounded-lg bg-slate-900/80 border border-amber-900/50 space-y-1.5 text-xs font-mono">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Arrival Airport</span>
+                  <span className="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 text-[10px] font-bold border border-amber-800/40">
+                    {destination.icao} / {destination.iata}
+                  </span>
+                </div>
+                <div className="text-slate-100 font-bold font-sans text-xs line-clamp-1">{destination.name}</div>
+                <div className="text-slate-400 text-[11px] font-sans">{destination.city}, {destination.country}</div>
+                <div className="pt-1.5 border-t border-slate-800/80 grid grid-cols-2 gap-1 text-[10px] text-slate-400">
+                  <span>Elev: <strong className="text-slate-200">{destination.elevationFt} ft</strong></span>
+                  <span>Alt: <strong className="text-slate-200">{destination.defaultAlternate || 'VOBL'}</strong></span>
+                  <span className="col-span-2 text-slate-500 truncate">Coords: {destination.lat.toFixed(4)}°, {destination.lon.toFixed(4)}°</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Flight Times & Estimated Arrival ETA Banner */}
+            <div className="p-3 rounded-lg bg-gradient-to-r from-cyan-950/40 via-slate-900/90 to-emerald-950/40 border border-cyan-800/40 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono">
+              <div className="p-1.5">
+                <span className="text-[10px] text-slate-400 block uppercase">Scheduled DEP</span>
+                <span className="text-xs font-bold text-slate-200">{plan?.departureTimeFormatted || '12:00 Z'}</span>
+              </div>
+              <div className="p-1.5">
+                <span className="text-[10px] text-slate-400 block uppercase">Airborne EET</span>
+                <span className="text-xs font-bold text-cyan-300">{plan?.flightTimeFormatted || '--'}</span>
+              </div>
+              <div className="p-1.5 bg-emerald-950/60 rounded border border-emerald-800/50">
+                <span className="text-[10px] text-emerald-400 block uppercase font-bold">Estimated ETA</span>
+                <span className="text-xs font-bold text-emerald-300">{plan?.etaFormatted || '--'}</span>
+              </div>
+              <div className="p-1.5">
+                <span className="text-[10px] text-slate-400 block uppercase">Block Time</span>
+                <span className="text-xs font-bold text-sky-300">{plan?.blockTimeFormatted || '--'}</span>
               </div>
             </div>
 
             {/* Quick Presets */}
-            <div className="mt-4 pt-3 border-t border-slate-800">
+            <div className="pt-2 border-t border-slate-800">
               <span className="text-[10px] text-slate-500 block uppercase mb-2 font-mono">Popular City Pairs</span>
               <div className="flex flex-wrap gap-1.5">
                 {[
-                  { from: 'VIDP', to: 'VABB', label: 'DEL-BOM (Metropolis)' },
-                  { from: 'VOBL', to: 'VIDP', label: 'BLR-DEL (Trunk)' },
-                  { from: 'OMDB', to: 'EGLL', label: 'DXB-LHR (Long Haul)' },
-                  { from: 'KJFK', to: 'EGLL', label: 'JFK-LHR (Transatlantic)' },
-                  { from: 'WSSS', to: 'VIDP', label: 'SIN-DEL (Asia-Pac)' },
-                  { from: 'RJTT', to: 'EGLL', label: 'HND-LHR (Polar Track)' },
+                  { from: 'VIDP', to: 'VABB', label: 'DEL-BOM (Delhi ➔ Mumbai)' },
+                  { from: 'VOBL', to: 'VIDP', label: 'BLR-DEL (Bengaluru ➔ Delhi)' },
+                  { from: 'OMDB', to: 'EGLL', label: 'DXB-LHR (Dubai ➔ London)' },
+                  { from: 'KJFK', to: 'EGLL', label: 'JFK-LHR (New York ➔ London)' },
+                  { from: 'WSSS', to: 'VIDP', label: 'SIN-DEL (Singapore ➔ Delhi)' },
+                  { from: 'KSFO', to: 'RJTT', label: 'SFO-HND (San Francisco ➔ Tokyo)' },
+                  { from: 'VIDP', to: 'VOHS', label: 'DEL-HYD (Delhi ➔ Hyderabad)' },
+                  { from: 'LFPG', to: 'KJFK', label: 'CDG-JFK (Paris ➔ New York)' },
                 ].map((pair, idx) => (
                   <button
                     key={idx}
@@ -239,7 +301,7 @@ export default function FlightSetupTab({
                         setDestination(arr);
                       }
                     }}
-                    className="text-[10px] px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 font-mono transition-all"
+                    className="text-[10px] px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-800 hover:border-cyan-800 font-mono transition-all"
                   >
                     {pair.label}
                   </button>

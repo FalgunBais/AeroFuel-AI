@@ -95,6 +95,7 @@ export default function App() {
         origin={origin}
         destination={destination}
         aircraft={aircraft}
+        plan={plan}
       />
 
       {/* Main Tactical Dashboard Container */}
