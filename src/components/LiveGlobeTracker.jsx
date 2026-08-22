@@ -1,7 +1,7 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
-import { Plane, Search, Radio, Compass, Fuel, Flame, Gauge, ArrowRight, CheckCircle2, Navigation, Eye, Filter, ShieldCheck, MapPin, X, Clock, Cloud, Layers, Zap } from 'lucide-react';
-import { INITIAL_LIVE_FLIGHTS, advanceFlightTelemetry, getFlightCurrentCoordinates } from '../data/liveFlights';
+import { Plane, Search, Radio, Compass, Fuel, Flame, Gauge, ArrowRight, Filter, ShieldCheck, MapPin, X, Clock, Cloud, Layers, Zap, RotateCcw } from 'lucide-react';
+import { INITIAL_LIVE_FLIGHTS, advanceFlightTelemetry } from '../data/liveFlights';
 import { AIRPORTS, getAirportByIcao } from '../data/airports';
 import { AIRCRAFT_PROFILES, getAircraftById } from '../data/aircraft';
 
@@ -17,27 +17,23 @@ function latLonToVector3(lat, lon, radius = 2) {
   return new THREE.Vector3(x, y, z);
 }
 
-// Generate cached procedural Earth Map Texture
-let cachedEarthTexture = null;
-
-function getOrCreateEarthTexture() {
-  if (cachedEarthTexture) return cachedEarthTexture;
-
+// Generate single high-res Canvas Texture for Earth
+function generateEarthTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = 2048;
   canvas.height = 1024;
   const ctx = canvas.getContext('2d');
 
-  // Deep Ocean Blue Base
+  // Deep Navy Ocean
   const oceanGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  oceanGrad.addColorStop(0, '#040b17');
-  oceanGrad.addColorStop(0.5, '#07152d');
-  oceanGrad.addColorStop(1, '#040b17');
+  oceanGrad.addColorStop(0, '#030a16');
+  oceanGrad.addColorStop(0.5, '#061328');
+  oceanGrad.addColorStop(1, '#030a16');
   ctx.fillStyle = oceanGrad;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Tactical Lat/Lon Graticule Lines
-  ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
+  // Lat/Lon Graticules
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.07)';
   ctx.lineWidth = 1;
   for (let lat = 0; lat <= canvas.height; lat += canvas.height / 12) {
     ctx.beginPath();
@@ -52,9 +48,9 @@ function getOrCreateEarthTexture() {
     ctx.stroke();
   }
 
-  // Draw Continents Landmass Polygons
-  ctx.fillStyle = '#0f243e';
-  ctx.strokeStyle = '#1e4b7a';
+  // Continents Landmass Polygons
+  ctx.fillStyle = '#0e233d';
+  ctx.strokeStyle = '#1b436c';
   ctx.lineWidth = 1.5;
 
   const toX = (lon) => ((lon + 180) / 360) * canvas.width;
@@ -72,7 +68,6 @@ function getOrCreateEarthTexture() {
     ctx.stroke();
   }
 
-  // Continental land polygons
   // 1. Indian Subcontinent & South Asia
   drawLandPoly([[35, 74], [30, 68], [24, 68], [19, 72], [10, 76], [8, 77], [13, 80], [21, 87], [26, 92], [28, 88], [34, 78]]);
   // 2. Southeast Asia & Indonesia
@@ -117,25 +112,50 @@ function getOrCreateEarthTexture() {
     ctx.fill();
   });
 
-  cachedEarthTexture = new THREE.CanvasTexture(canvas);
-  cachedEarthTexture.wrapS = THREE.RepeatWrapping;
-  cachedEarthTexture.wrapT = THREE.ClampToEdgeWrapping;
-  return cachedEarthTexture;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  return texture;
 }
 
 export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
   const mountRef = useRef(null);
-  const [selectedFlight, setSelectedFlight] = useState(INITIAL_LIVE_FLIGHTS[0]);
+  
+  // State
+  const [selectedFlightNumber, setSelectedFlightNumber] = useState(INITIAL_LIVE_FLIGHTS[0].flightNo);
   const [searchQuery, setSearchQuery] = useState('');
   const [airlineFilter, setAirlineFilter] = useState('ALL');
   const [altitudeFilter, setAltitudeFilter] = useState('ALL');
   const [autoRotate, setAutoRotate] = useState(true);
   const [flights, setFlights] = useState(INITIAL_LIVE_FLIGHTS);
   const [hoveredFlight, setHoveredFlight] = useState(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [mouseScreenPos, setMouseScreenPos] = useState({ x: 0, y: 0 });
   const [showFilters, setShowFilters] = useState(false);
 
-  // Dynamic Real-Time Flight Advancement Engine
+  // Refs for Three.js instance objects (Persist across renders without recreation!)
+  const sceneRef = useRef(null);
+  const rendererRef = useRef(null);
+  const cameraRef = useRef(null);
+  const globeGroupRef = useRef(null);
+  const flightObjectsMapRef = useRef(new Map()); // Map flightNo -> { mesh, halo, arcLine, curve }
+  const isDraggingRef = useRef(false);
+  const prevMousePosRef = useRef({ x: 0, y: 0 });
+  const rotationVelocityRef = useRef({ x: 0, y: 0 });
+  const targetGlobeRotationRef = useRef({ x: 0, y: 0 });
+  const autoRotateRef = useRef(autoRotate);
+  const hoveredFlightRef = useRef(null);
+  const selectedFlightNumRef = useRef(selectedFlightNumber);
+
+  // Sync refs with state
+  useEffect(() => {
+    autoRotateRef.current = autoRotate;
+  }, [autoRotate]);
+
+  useEffect(() => {
+    selectedFlightNumRef.current = selectedFlightNumber;
+  }, [selectedFlightNumber]);
+
+  // Real-Time 1 Hz Telemetry Advancement Loop
   useEffect(() => {
     const interval = setInterval(() => {
       setFlights((prevFlights) => prevFlights.map((f) => advanceFlightTelemetry(f)));
@@ -143,7 +163,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Filter flights
+  // Filtered flights calculation
   const filteredFlights = useMemo(() => {
     return flights.filter((f) => {
       if (searchQuery.trim()) {
@@ -171,51 +191,64 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
   }, [flights, searchQuery, airlineFilter, altitudeFilter]);
 
   const uniqueAirlines = useMemo(() => {
-    return Array.from(new Set(flights.map((f) => f.airline))).sort();
-  }, [flights]);
+    return Array.from(new Set(INITIAL_LIVE_FLIGHTS.map((f) => f.airline))).sort();
+  }, []);
 
   const activeFlight = useMemo(() => {
-    return flights.find((f) => f.flightNo === selectedFlight.flightNo) || flights[0];
-  }, [flights, selectedFlight]);
+    return flights.find((f) => f.flightNo === selectedFlightNumber) || flights[0];
+  }, [flights, selectedFlightNumber]);
 
-  // Three.js 3D Globe Render Scene
+  // =========================================================================
+  // 1. INITIALIZE THREE.JS SCENE ONCE ON COMPONENT MOUNT
+  // =========================================================================
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
 
     const width = container.clientWidth;
-    const height = container.clientHeight || 600;
+    const height = container.clientHeight || 580;
 
+    // 1. Scene, Camera, Renderer
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x040812);
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     camera.position.z = 5.2;
+    cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      powerPreference: 'high-performance',
+    });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x040812, 1);
     container.replaceChildren(renderer.domElement);
+    rendererRef.current = renderer;
 
+    // 2. Rotatable Globe Group
     const globeGroup = new THREE.Group();
     scene.add(globeGroup);
+    globeGroupRef.current = globeGroup;
 
     const globeRadius = 2.0;
 
-    // Optimized Earth Texture & Sphere
-    const earthTexture = getOrCreateEarthTexture();
+    // Base Textured Earth Sphere
+    const earthTexture = generateEarthTexture();
     const sphereGeo = new THREE.SphereGeometry(globeRadius, 64, 64);
     const sphereMat = new THREE.MeshStandardMaterial({
       map: earthTexture,
-      roughness: 0.7,
+      roughness: 0.65,
       metalness: 0.1,
       emissive: 0x030814,
-      emissiveIntensity: 0.4,
+      emissiveIntensity: 0.35,
     });
     const globeSphere = new THREE.Mesh(sphereGeo, sphereMat);
     globeGroup.add(globeSphere);
 
-    // Glowing Outer Atmosphere Rim
+    // Glowing Atmosphere Rim
     const atmosGeo = new THREE.SphereGeometry(globeRadius * 1.14, 32, 32);
     const atmosMat = new THREE.ShaderMaterial({
       vertexShader: `
@@ -240,10 +273,10 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     scene.add(atmosphere);
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
     scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0xe0f2fe, 1.4);
+    const sunLight = new THREE.DirectionalLight(0xe0f2fe, 1.5);
     sunLight.position.set(6, 4, 6);
     scene.add(sunLight);
 
@@ -252,26 +285,47 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     globeGroup.add(airportPinsGroup);
 
     AIRPORTS.forEach((apt) => {
-      const pos = latLonToVector3(apt.lat, apt.lon, globeRadius * 1.006);
-      const dotGeo = new THREE.SphereGeometry(0.018, 10, 10);
+      const pos = latLonToVector3(apt.lat, apt.lon, globeRadius * 1.005);
+      const dotGeo = new THREE.SphereGeometry(0.016, 8, 8);
       const dotMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
       const dot = new THREE.Mesh(dotGeo, dotMat);
       dot.position.copy(pos);
       airportPinsGroup.add(dot);
     });
 
-    // Dynamic Flight Arcs & Aircraft Mesh Markers
-    const flightsVisualGroup = new THREE.Group();
-    globeGroup.add(flightsVisualGroup);
+    // 3. Shared Reusable Geometries & Materials for Flights
+    const sharedPlaneGeo = new THREE.ConeGeometry(0.045, 0.11, 8);
+    sharedPlaneGeo.rotateX(Math.PI / 2);
 
-    const raycastObjects = [];
+    const sharedPlaneMatActive = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x06b6d4,
+      roughness: 0.1,
+    });
 
-    filteredFlights.forEach((flight) => {
+    const sharedPlaneMatInactive = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      emissive: 0xb45309,
+      roughness: 0.2,
+    });
+
+    const sharedRingGeo = new THREE.RingGeometry(0.06, 0.085, 16);
+    const sharedRingMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.9,
+    });
+
+    // Instantiate all flight 3D objects once
+    const flightMap = new Map();
+    const flightsGroup = new THREE.Group();
+    globeGroup.add(flightsGroup);
+
+    INITIAL_LIVE_FLIGHTS.forEach((flight) => {
       const origin = getAirportByIcao(flight.originIcao);
       const dest = getAirportByIcao(flight.destIcao);
       if (!origin || !dest) return;
-
-      const isCurrent = flight.flightNo === selectedFlight.flightNo;
 
       const startVec = latLonToVector3(origin.lat, origin.lon, globeRadius);
       const endVec = latLonToVector3(dest.lat, dest.lon, globeRadius);
@@ -286,100 +340,83 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
       const arcGeo = new THREE.BufferGeometry().setFromPoints(points);
 
       const arcMat = new THREE.LineBasicMaterial({
-        color: isCurrent ? 0x06b6d4 : 0x1e3a8a,
+        color: 0x1e3a8a,
         transparent: true,
-        opacity: isCurrent ? 0.95 : 0.25,
+        opacity: 0.3,
       });
 
       const arcLine = new THREE.Line(arcGeo, arcMat);
-      flightsVisualGroup.add(arcLine);
+      flightsGroup.add(arcLine);
 
-      // Current plane position
-      const planePos = curve.getPoint(flight.progressPct / 100);
+      // Plane Mesh
+      const planeMesh = new THREE.Mesh(sharedPlaneGeo, sharedPlaneMatInactive.clone());
+      planeMesh.userData = { flightNo: flight.flightNo };
+      flightsGroup.add(planeMesh);
 
-      // Aircraft marker
-      const planeGeo = new THREE.ConeGeometry(0.045, 0.11, 8);
-      planeGeo.rotateX(Math.PI / 2);
-      const planeMat = new THREE.MeshStandardMaterial({
-        color: isCurrent ? 0x38bdf8 : 0xf59e0b,
-        emissive: isCurrent ? 0x06b6d4 : 0xb45309,
-        roughness: 0.1,
+      // Halo Ring
+      const haloMesh = new THREE.Mesh(sharedRingGeo, sharedRingMat);
+      haloMesh.visible = false;
+      flightsGroup.add(haloMesh);
+
+      flightMap.set(flight.flightNo, {
+        mesh: planeMesh,
+        halo: haloMesh,
+        arcLine: arcLine,
+        curve: curve,
       });
-      const planeMesh = new THREE.Mesh(planeGeo, planeMat);
-      planeMesh.position.copy(planePos);
-
-      const tangent = curve.getTangent(flight.progressPct / 100);
-      planeMesh.lookAt(planePos.clone().add(tangent));
-      planeMesh.userData = { flight };
-
-      flightsVisualGroup.add(planeMesh);
-      raycastObjects.push(planeMesh);
-
-      // Glow halo ring for active flight
-      if (isCurrent) {
-        const ringGeo = new THREE.RingGeometry(0.06, 0.085, 16);
-        const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.position.copy(planePos);
-        ring.lookAt(planePos.clone().multiplyScalar(2));
-        flightsVisualGroup.add(ring);
-      }
     });
 
-    // Camera Chase / Auto Focus on Active Plane
-    const activeOrigin = getAirportByIcao(activeFlight.originIcao);
-    const activeDest = getAirportByIcao(activeFlight.destIcao);
-    if (activeOrigin && activeDest) {
-      const activeStart = latLonToVector3(activeOrigin.lat, activeOrigin.lon, globeRadius);
-      const activeEnd = latLonToVector3(activeDest.lat, activeDest.lon, globeRadius);
-      const activeMid = new THREE.Vector3().addVectors(activeStart, activeEnd).multiplyScalar(0.5);
-      const activeElev = Math.min(1.4, 0.2 + activeStart.distanceTo(activeEnd) * 0.22);
-      activeMid.normalize().multiplyScalar(globeRadius + activeElev);
-      const activeCurve = new THREE.QuadraticBezierCurve3(activeStart, activeMid, activeEnd);
-      const curPos = activeCurve.getPoint(activeFlight.progressPct / 100);
+    flightObjectsMapRef.current = flightMap;
 
-      const targetRotationY = -Math.atan2(curPos.x, curPos.z);
-      globeGroup.rotation.y = THREE.MathUtils.lerp(globeGroup.rotation.y, targetRotationY, 0.03);
-    }
-
-    // Drag, Hover & Raycasting
-    let isDragging = false;
-    let previousMousePosition = { x: 0, y: 0 };
+    // 4. Fluid Mouse Drag, Zoom & Raycasting
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    const onMouseDown = (e) => {
-      isDragging = true;
-      previousMousePosition = { x: e.clientX, y: e.clientY };
+    const onPointerDown = (e) => {
+      isDraggingRef.current = true;
+      prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+      rotationVelocityRef.current = { x: 0, y: 0 };
     };
 
-    const onMouseMove = (e) => {
+    const onPointerMove = (e) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      setMouseScreenPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
 
+      // Fast Raycast check on hover
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(raycastObjects);
+      const meshes = Array.from(flightObjectsMapRef.current.values()).map((v) => v.mesh);
+      const intersects = raycaster.intersectObjects(meshes);
+
       if (intersects.length > 0) {
-        setHoveredFlight(intersects[0].object.userData.flight);
+        const fNo = intersects[0].object.userData.flightNo;
+        const flt = INITIAL_LIVE_FLIGHTS.find((f) => f.flightNo === fNo);
+        hoveredFlightRef.current = flt;
+        setHoveredFlight(flt);
       } else {
+        hoveredFlightRef.current = null;
         setHoveredFlight(null);
       }
 
-      if (!isDragging) return;
+      if (!isDraggingRef.current) return;
 
-      const deltaX = e.clientX - previousMousePosition.x;
-      const deltaY = e.clientY - previousMousePosition.y;
+      const deltaX = e.clientX - prevMousePosRef.current.x;
+      const deltaY = e.clientY - prevMousePosRef.current.y;
 
       globeGroup.rotation.y += deltaX * 0.005;
       globeGroup.rotation.x += deltaY * 0.005;
 
-      previousMousePosition = { x: e.clientX, y: e.clientY };
+      rotationVelocityRef.current = {
+        x: deltaX * 0.003,
+        y: deltaY * 0.003,
+      };
+
+      prevMousePosRef.current = { x: e.clientX, y: e.clientY };
     };
 
-    const onMouseUp = () => {
-      isDragging = false;
+    const onPointerUp = () => {
+      isDraggingRef.current = false;
     };
 
     const onClick = (e) => {
@@ -388,18 +425,19 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(raycastObjects);
+      const meshes = Array.from(flightObjectsMapRef.current.values()).map((v) => v.mesh);
+      const intersects = raycaster.intersectObjects(meshes);
 
       if (intersects.length > 0) {
-        const clicked = intersects[0].object.userData.flight;
-        if (clicked) setSelectedFlight(clicked);
+        const fNo = intersects[0].object.userData.flightNo;
+        if (fNo) setSelectedFlightNumber(fNo);
       }
     };
 
     const dom = renderer.domElement;
-    dom.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    dom.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
     dom.addEventListener('click', onClick);
 
     const onWheel = (e) => {
@@ -408,12 +446,24 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     };
     dom.addEventListener('wheel', onWheel, { passive: false });
 
-    let animationFrameId;
+    // 5. 60 FPS Render Loop with Smooth Velocity Damping
+    let animId;
     const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
-      if (autoRotate && !isDragging && !hoveredFlight) {
-        globeGroup.rotation.y += 0.0012;
+      animId = requestAnimationFrame(animate);
+
+      // Inertial rotation damping
+      if (!isDraggingRef.current) {
+        globeGroup.rotation.y += rotationVelocityRef.current.x;
+        globeGroup.rotation.x += rotationVelocityRef.current.y;
+        rotationVelocityRef.current.x *= 0.92;
+        rotationVelocityRef.current.y *= 0.92;
+
+        // Auto-rotation when idle
+        if (autoRotateRef.current && !hoveredFlightRef.current) {
+          globeGroup.rotation.y += 0.0015;
+        }
       }
+
       renderer.render(scene, camera);
     };
     animate();
@@ -421,7 +471,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     const handleResize = () => {
       if (!container) return;
       const w = container.clientWidth;
-      const h = container.clientHeight || 600;
+      const h = container.clientHeight || 580;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
@@ -429,20 +479,78 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     window.addEventListener('resize', handleResize);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
-      dom.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+      cancelAnimationFrame(animId);
+      dom.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
       dom.removeEventListener('click', onClick);
       dom.removeEventListener('wheel', onWheel);
       window.removeEventListener('resize', handleResize);
       renderer.dispose();
     };
-  }, [filteredFlights, selectedFlight, autoRotate, hoveredFlight]);
+  }, []); // Run ONCE on mount!
+
+  // =========================================================================
+  // 2. EFFICIENT IN-PLACE UPDATE OF PLANES (Zero Scene Re-creation!)
+  // =========================================================================
+  useEffect(() => {
+    const flightMap = flightObjectsMapRef.current;
+    if (!flightMap || flightMap.size === 0) return;
+
+    flights.forEach((flight) => {
+      const obj = flightMap.get(flight.flightNo);
+      if (!obj) return;
+
+      const isSelected = flight.flightNo === selectedFlightNumber;
+      const isVisible = filteredFlights.some((f) => f.flightNo === flight.flightNo);
+
+      obj.mesh.visible = isVisible;
+      obj.arcLine.visible = isVisible;
+
+      if (!isVisible) return;
+
+      // Update position along curve
+      const pos = obj.curve.getPoint(flight.progressPct / 100);
+      obj.mesh.position.copy(pos);
+
+      const tangent = obj.curve.getTangent(flight.progressPct / 100);
+      obj.mesh.lookAt(pos.clone().add(tangent));
+
+      // Update selection styling
+      if (isSelected) {
+        obj.mesh.material.color.setHex(0x38bdf8);
+        obj.mesh.material.emissive.setHex(0x06b6d4);
+        obj.arcLine.material.color.setHex(0x06b6d4);
+        obj.arcLine.material.opacity = 0.95;
+
+        obj.halo.visible = true;
+        obj.halo.position.copy(pos);
+        obj.halo.lookAt(pos.clone().multiplyScalar(2));
+      } else {
+        obj.mesh.material.color.setHex(0xf59e0b);
+        obj.mesh.material.emissive.setHex(0xb45309);
+        obj.arcLine.material.color.setHex(0x1e3a8a);
+        obj.arcLine.material.opacity = 0.3;
+        obj.halo.visible = false;
+      }
+    });
+  }, [flights, selectedFlightNumber, filteredFlights]);
 
   const originApt = getAirportByIcao(activeFlight.originIcao);
   const destApt = getAirportByIcao(activeFlight.destIcao);
   const acProfile = getAircraftById(activeFlight.aircraftId);
+
+  // Focus Camera button
+  const handleFocusOnPlane = () => {
+    const obj = flightObjectsMapRef.current.get(activeFlight.flightNo);
+    const globeGroup = globeGroupRef.current;
+    if (obj && globeGroup) {
+      const pos = obj.curve.getPoint(activeFlight.progressPct / 100);
+      const targetY = -Math.atan2(pos.x, pos.z);
+      globeGroup.rotation.y = targetY;
+      globeGroup.rotation.x = 0.1;
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -455,19 +563,19 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
           <div>
             <div className="flex items-center space-x-2">
               <h2 className="text-sm font-bold uppercase tracking-wider text-white font-mono">
-                Global Air Traffic Radar — 3D Live Earth
+                Global Air Traffic Radar — Real-Time 3D Earth
               </h2>
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono">
                 {filteredFlights.length} / {flights.length} AIRBORNE
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Flightradar24-grade real-time tracking: click any plane on the 3D globe or search to inspect avionics & fuel metrics.
+              Silky smooth 60 FPS flight radar: click any aircraft on the globe or list to inspect real-time fuel and avionics.
             </p>
           </div>
         </div>
 
-        {/* Search, Filter Toggles & Auto-Rotate */}
+        {/* Search, Filter Toggles & Controls */}
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="relative flex-1 sm:w-60">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -493,6 +601,14 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
             {(airlineFilter !== 'ALL' || altitudeFilter !== 'ALL') && (
               <span className="w-2 h-2 rounded-full bg-cyan-400" />
             )}
+          </button>
+
+          <button
+            onClick={handleFocusOnPlane}
+            className="px-3 py-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-xs font-mono transition-all"
+            title="Focus camera on selected plane"
+          >
+            Track Plane
           </button>
 
           <button
@@ -563,11 +679,11 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
           {/* Globe Canvas Container */}
           <div ref={mountRef} className="w-full h-full min-h-[520px] flex-1 cursor-grab active:cursor-grabbing select-none" />
 
-          {/* Interactive Hover Tooltip over Canvas */}
+          {/* Interactive Hover Tooltip */}
           {hoveredFlight && (
             <div
-              className="absolute z-20 pointer-events-none bg-slate-900/95 border border-cyan-500/80 rounded-lg px-3 py-2 shadow-2xl font-mono text-xs text-white backdrop-blur space-y-0.5 transition-all"
-              style={{ left: `${mousePos.x + 15}px`, top: `${mousePos.y - 45}px` }}
+              className="absolute z-20 pointer-events-none bg-slate-900/95 border border-cyan-500/80 rounded-lg px-3 py-2 shadow-2xl font-mono text-xs text-white backdrop-blur space-y-0.5"
+              style={{ left: `${mouseScreenPos.x + 15}px`, top: `${mouseScreenPos.y - 45}px` }}
             >
               <div className="flex items-center space-x-2">
                 <Plane className="w-3 h-3 text-cyan-400 transform -rotate-45" />
@@ -580,7 +696,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
             </div>
           )}
 
-          {/* Tactical Floating Flight Banner Over Globe */}
+          {/* Tactical Active Flight Floating Capsule */}
           <div className="absolute top-4 left-4 bg-slate-900/90 border border-slate-700/80 backdrop-blur-md rounded-xl p-3 shadow-xl max-w-xs font-mono text-xs space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-cyan-400 font-bold text-sm">{activeFlight.flightNo}</span>
@@ -603,7 +719,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
 
           {/* Controls Footer */}
           <div className="border-t border-slate-800/80 bg-[#060a12] px-4 py-2 flex items-center justify-between text-[11px] font-mono text-slate-500">
-            <span>Click any plane to inspect • Drag to orbit • Scroll to zoom</span>
+            <span>Left-click & drag to rotate • Scroll wheel to zoom in/out • Click any plane</span>
             <span className="text-cyan-400 flex items-center space-x-1">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span>Real-Time 1 Hz ADS-B Telemetry Stream</span>
@@ -640,7 +756,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
                   <span className="text-[10px] text-slate-500 uppercase block">In-Flight</span>
                   <div className="w-full h-0.5 bg-slate-700 relative my-1">
                     <div
-                      className="absolute top-0 left-0 h-full bg-cyan-400"
+                      className="absolute top-0 left-0 h-full bg-cyan-400 transition-all duration-300"
                       style={{ width: `${activeFlight.progressPct}%` }}
                     />
                   </div>
@@ -729,7 +845,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
                 return (
                   <button
                     key={flight.flightNo}
-                    onClick={() => setSelectedFlight(flight)}
+                    onClick={() => setSelectedFlightNumber(flight.flightNo)}
                     className={`w-full text-left p-2 rounded-lg border text-xs transition-all flex items-center justify-between ${
                       isCurrent
                         ? 'bg-cyan-950/60 border-cyan-500/60 text-cyan-200 shadow-sm shadow-cyan-500/10'
