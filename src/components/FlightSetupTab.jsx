@@ -1,7 +1,7 @@
-import React from 'react';
-import { Plane, MapPin, Gauge, Wind, Thermometer, Clock, ShieldCheck, AlertTriangle } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Plane, MapPin, Gauge, Wind, Thermometer, Clock, ShieldCheck, AlertTriangle, Search, Filter, Layers } from 'lucide-react';
 import { AIRPORTS } from '../data/airports';
-import { AIRCRAFT_PROFILES } from '../data/aircraft';
+import { AIRCRAFT_PROFILES, AIRCRAFT_CATEGORIES } from '../data/aircraft';
 
 export default function FlightSetupTab({
   aircraft,
@@ -15,6 +15,9 @@ export default function FlightSetupTab({
   plan,
   alerts
 }) {
+  const [selectedCategory, setSelectedCategory] = useState('All Types');
+  const [aircraftSearch, setAircraftSearch] = useState('');
+
   const handleAirportSwap = () => {
     const temp = origin;
     setOrigin(destination);
@@ -27,6 +30,25 @@ export default function FlightSetupTab({
       [field]: Number(value),
     }));
   };
+
+  // Filtered aircraft list
+  const filteredAircraft = useMemo(() => {
+    return AIRCRAFT_PROFILES.filter((ac) => {
+      if (selectedCategory !== 'All Types' && ac.category !== selectedCategory) {
+        return false;
+      }
+      if (aircraftSearch.trim()) {
+        const q = aircraftSearch.toLowerCase();
+        return (
+          ac.name.toLowerCase().includes(q) ||
+          ac.manufacturer.toLowerCase().includes(q) ||
+          ac.type.toLowerCase().includes(q) ||
+          ac.engine.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [selectedCategory, aircraftSearch]);
 
   return (
     <div className="space-y-6">
@@ -59,12 +81,12 @@ export default function FlightSetupTab({
         {/* Left Column: Route & Aircraft Selection (5 cols) */}
         <div className="lg:col-span-5 space-y-6">
           {/* Aircraft Selection Card */}
-          <div className="bg-[#0c1424] border border-slate-800 rounded-xl p-5 shadow-lg">
-            <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-800">
+          <div className="bg-[#0c1424] border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center space-x-2">
                 <Plane className="w-4 h-4 text-cyan-400" />
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-mono">
-                  Aircraft Airframe & Model
+                  Aircraft Fleet & Airframe ({AIRCRAFT_PROFILES.length} Models)
                 </h3>
               </div>
               <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/50">
@@ -72,8 +94,25 @@ export default function FlightSetupTab({
               </span>
             </div>
 
-            <div className="space-y-3">
-              <label className="block text-xs text-slate-400">Select Operating Fleet Aircraft</label>
+            {/* Category Filter Pills */}
+            <div className="flex space-x-1 overflow-x-auto pb-1 scrollbar-none text-[11px] font-mono">
+              {AIRCRAFT_CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-2.5 py-1 rounded-md transition-all whitespace-nowrap ${
+                    selectedCategory === cat
+                      ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-400/50 font-bold'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {/* Airframe Dropdown Selector */}
+            <div className="space-y-2">
               <select
                 value={aircraft.id}
                 onChange={(e) => {
@@ -87,14 +126,18 @@ export default function FlightSetupTab({
                     }));
                   }
                 }}
-                className="w-full bg-[#080c14] border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+                className="w-full bg-[#080c14] border border-slate-700 rounded-lg px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono font-semibold"
               >
-                {AIRCRAFT_PROFILES.map((ac) => (
+                {filteredAircraft.map((ac) => (
                   <option key={ac.id} value={ac.id}>
-                    {ac.name} ({ac.type} • {ac.engine})
+                    [{ac.category}] {ac.name} ({ac.engine})
                   </option>
                 ))}
               </select>
+
+              <p className="text-[11px] text-slate-400 italic">
+                {aircraft.description}
+              </p>
 
               <div className="grid grid-cols-2 gap-2 pt-2 text-xs font-mono">
                 <div className="p-2 rounded bg-slate-900/80 border border-slate-800">
@@ -106,11 +149,11 @@ export default function FlightSetupTab({
                   <span className="text-cyan-300 font-bold">{aircraft.maxFuelKg.toLocaleString()} kg</span>
                 </div>
                 <div className="p-2 rounded bg-slate-900/80 border border-slate-800">
-                  <span className="text-[10px] text-slate-500 block uppercase">TAS Cruise</span>
+                  <span className="text-[10px] text-slate-500 block uppercase">Cruise Speed</span>
                   <span className="text-slate-200 font-bold">{aircraft.cruiseSpeedKt} KT (FL{aircraft.optimumFL})</span>
                 </div>
                 <div className="p-2 rounded bg-slate-900/80 border border-slate-800">
-                  <span className="text-[10px] text-slate-500 block uppercase">Base Cruise Burn</span>
+                  <span className="text-[10px] text-slate-500 block uppercase">Cruise Burn</span>
                   <span className="text-emerald-300 font-bold">{aircraft.cruiseBurnKgHr.toLocaleString()} kg/hr</span>
                 </div>
               </div>
@@ -183,6 +226,8 @@ export default function FlightSetupTab({
                   { from: 'VOBL', to: 'VIDP', label: 'BLR-DEL (Trunk)' },
                   { from: 'OMDB', to: 'EGLL', label: 'DXB-LHR (Long Haul)' },
                   { from: 'KJFK', to: 'EGLL', label: 'JFK-LHR (Transatlantic)' },
+                  { from: 'WSSS', to: 'VIDP', label: 'SIN-DEL (Asia-Pac)' },
+                  { from: 'RJTT', to: 'EGLL', label: 'HND-LHR (Polar Track)' },
                 ].map((pair, idx) => (
                   <button
                     key={idx}
@@ -257,7 +302,7 @@ export default function FlightSetupTab({
               </div>
               <input
                 type="range"
-                min={2000}
+                min={1000}
                 max={aircraft.maxPayloadKg}
                 step={500}
                 value={inputs.payloadKg}
@@ -265,7 +310,7 @@ export default function FlightSetupTab({
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
               />
               <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
-                <span>Light (2,000 kg)</span>
+                <span>Light Load</span>
                 <span>Max Structural: {aircraft.maxPayloadKg.toLocaleString()} kg</span>
               </div>
             </div>

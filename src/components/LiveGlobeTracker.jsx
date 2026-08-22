@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import * as THREE from 'three';
-import { Plane, Search, Radio, Compass, Fuel, Flame, Gauge, ArrowRight, CheckCircle2, Navigation, Eye, Filter, ShieldCheck, MapPin, X, Clock, Cloud, Layers } from 'lucide-react';
-import { LIVE_FLIGHTS, getFlightCurrentCoordinates } from '../data/liveFlights';
+import { Plane, Search, Radio, Compass, Fuel, Flame, Gauge, ArrowRight, CheckCircle2, Navigation, Eye, Filter, ShieldCheck, MapPin, X, Clock, Cloud, Layers, Zap } from 'lucide-react';
+import { INITIAL_LIVE_FLIGHTS, advanceFlightTelemetry, getFlightCurrentCoordinates } from '../data/liveFlights';
 import { AIRPORTS, getAirportByIcao } from '../data/airports';
 import { AIRCRAFT_PROFILES, getAircraftById } from '../data/aircraft';
 
@@ -17,8 +17,12 @@ function latLonToVector3(lat, lon, radius = 2) {
   return new THREE.Vector3(x, y, z);
 }
 
-// Generate realistic procedural Earth Map Texture with Continents, Oceans & City Lights
-function createEarthCanvasTexture() {
+// Generate cached procedural Earth Map Texture
+let cachedEarthTexture = null;
+
+function getOrCreateEarthTexture() {
+  if (cachedEarthTexture) return cachedEarthTexture;
+
   const canvas = document.createElement('canvas');
   canvas.width = 2048;
   canvas.height = 1024;
@@ -48,7 +52,7 @@ function createEarthCanvasTexture() {
     ctx.stroke();
   }
 
-  // Draw Continents Landmass Polygons (Equirectangular projection)
+  // Draw Continents Landmass Polygons
   ctx.fillStyle = '#0f243e';
   ctx.strokeStyle = '#1e4b7a';
   ctx.lineWidth = 1.5;
@@ -68,19 +72,19 @@ function createEarthCanvasTexture() {
     ctx.stroke();
   }
 
-  // Simplified continental land polygons
+  // Continental land polygons
   // 1. Indian Subcontinent & South Asia
   drawLandPoly([[35, 74], [30, 68], [24, 68], [19, 72], [10, 76], [8, 77], [13, 80], [21, 87], [26, 92], [28, 88], [34, 78]]);
   // 2. Southeast Asia & Indonesia
   drawLandPoly([[22, 92], [15, 100], [10, 98], [1, 103], [-6, 106], [-8, 115], [-5, 120], [6, 117], [16, 108], [21, 105]]);
   // 3. East Asia (China, Japan, Korea)
   drawLandPoly([[42, 80], [50, 120], [40, 128], [35, 129], [32, 121], [22, 114], [25, 100], [38, 90]]);
-  drawLandPoly([[44, 142], [38, 140], [34, 132], [32, 130], [36, 138], [43, 145]]); // Japan
+  drawLandPoly([[44, 142], [38, 140], [34, 132], [32, 130], [36, 138], [43, 145]]);
   // 4. Middle East & Arabian Peninsula
   drawLandPoly([[37, 36], [32, 35], [28, 34], [22, 38], [12, 44], [16, 53], [25, 57], [30, 48], [36, 42]]);
   // 5. Europe & British Isles
   drawLandPoly([[70, 25], [60, 5], [52, 2], [44, -1], [36, -6], [36, 14], [40, 26], [46, 14], [54, 12], [58, 28], [65, 32]]);
-  drawLandPoly([[58, -5], [50, -5], [51, 1], [56, -2]]); // UK
+  drawLandPoly([[58, -5], [50, -5], [51, 1], [56, -2]]);
   // 6. Africa
   drawLandPoly([[36, -6], [32, 32], [12, 44], [0, 42], [-26, 32], [-34, 18], [-22, 14], [4, 9], [12, -15], [30, -10]]);
   // 7. North America
@@ -93,18 +97,18 @@ function createEarthCanvasTexture() {
   // Night city illumination clusters
   ctx.fillStyle = '#38bdf8';
   const majorCities = [
-    [28.56, 77.10], [19.08, 72.86], [13.19, 77.70], [12.99, 80.17], [22.65, 88.44], [17.24, 78.42], // India
-    [25.25, 55.36], [24.43, 54.65], [25.27, 51.60], [24.95, 46.69], // Middle East
-    [51.47, -0.45], [49.00, 2.54], [50.03, 8.56], [52.31, 4.76], // Europe
-    [40.64, -73.77], [41.97, -87.90], [33.94, -118.40], [37.62, -122.37], [25.79, -80.28], // US
-    [1.36, 103.99], [35.54, 139.77], [22.30, 113.91], [13.69, 100.75], [-33.93, 151.17] // Asia/Aus
+    [28.56, 77.10], [19.08, 72.86], [13.19, 77.70], [12.99, 80.17], [22.65, 88.44], [17.24, 78.42], [10.15, 76.40],
+    [25.25, 55.36], [24.43, 54.65], [25.27, 51.60], [24.95, 46.69],
+    [51.47, -0.45], [49.00, 2.54], [50.03, 8.56], [52.31, 4.76], [40.48, -3.56],
+    [40.64, -73.77], [41.97, -87.90], [33.94, -118.40], [37.62, -122.37], [25.79, -80.28],
+    [1.36, 103.99], [35.54, 139.77], [22.30, 113.91], [13.69, 100.75], [-33.93, 151.17]
   ];
 
   majorCities.forEach(([lat, lon]) => {
     const x = toX(lon);
     const y = toY(lat);
     const glow = ctx.createRadialGradient(x, y, 0, x, y, 6);
-    glow.addColorStop(0, 'rgba(56, 189, 248, 0.9)');
+    glow.addColorStop(0, 'rgba(56, 189, 248, 0.95)');
     glow.addColorStop(0.5, 'rgba(6, 182, 212, 0.4)');
     glow.addColorStop(1, 'rgba(6, 182, 212, 0)');
     ctx.fillStyle = glow;
@@ -113,45 +117,35 @@ function createEarthCanvasTexture() {
     ctx.fill();
   });
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  return texture;
+  cachedEarthTexture = new THREE.CanvasTexture(canvas);
+  cachedEarthTexture.wrapS = THREE.RepeatWrapping;
+  cachedEarthTexture.wrapT = THREE.ClampToEdgeWrapping;
+  return cachedEarthTexture;
 }
 
 export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
   const mountRef = useRef(null);
-  const [selectedFlight, setSelectedFlight] = useState(LIVE_FLIGHTS[0]);
+  const [selectedFlight, setSelectedFlight] = useState(INITIAL_LIVE_FLIGHTS[0]);
   const [searchQuery, setSearchQuery] = useState('');
   const [airlineFilter, setAirlineFilter] = useState('ALL');
   const [altitudeFilter, setAltitudeFilter] = useState('ALL');
   const [autoRotate, setAutoRotate] = useState(true);
-  const [flights, setFlights] = useState(LIVE_FLIGHTS);
+  const [flights, setFlights] = useState(INITIAL_LIVE_FLIGHTS);
   const [hoveredFlight, setHoveredFlight] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [showFilters, setShowFilters] = useState(false);
 
-  // Live simulation tick: gradually advance aircraft progress along route
+  // Dynamic Real-Time Flight Advancement Engine
   useEffect(() => {
     const interval = setInterval(() => {
-      setFlights((prev) =>
-        prev.map((f) => {
-          let newProgress = f.progressPct + 0.06;
-          if (newProgress > 98) newProgress = 5;
-          return {
-            ...f,
-            progressPct: parseFloat(newProgress.toFixed(2)),
-          };
-        })
-      );
+      setFlights((prevFlights) => prevFlights.map((f) => advanceFlightTelemetry(f)));
     }, 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Filter flights by search, airline, and altitude
+  // Filter flights
   const filteredFlights = useMemo(() => {
     return flights.filter((f) => {
-      // Search text
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const match =
@@ -164,12 +158,10 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
         if (!match) return false;
       }
 
-      // Airline filter
       if (airlineFilter !== 'ALL' && f.airline !== airlineFilter) {
         return false;
       }
 
-      // Altitude filter
       if (altitudeFilter === 'HIGH' && f.altitudeFL < 360) return false;
       if (altitudeFilter === 'MID' && (f.altitudeFL < 250 || f.altitudeFL >= 360)) return false;
       if (altitudeFilter === 'LOW' && f.altitudeFL >= 250) return false;
@@ -178,12 +170,10 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     });
   }, [flights, searchQuery, airlineFilter, altitudeFilter]);
 
-  // Unique airlines for dropdown
   const uniqueAirlines = useMemo(() => {
     return Array.from(new Set(flights.map((f) => f.airline))).sort();
   }, [flights]);
 
-  // Active Flight
   const activeFlight = useMemo(() => {
     return flights.find((f) => f.flightNo === selectedFlight.flightNo) || flights[0];
   }, [flights, selectedFlight]);
@@ -196,26 +186,24 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     const width = container.clientWidth;
     const height = container.clientHeight || 600;
 
-    // 1. Scene, Camera, Renderer
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x040812);
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     camera.position.z = 5.2;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.replaceChildren(renderer.domElement);
 
-    // 2. Globe Group
     const globeGroup = new THREE.Group();
     scene.add(globeGroup);
 
     const globeRadius = 2.0;
 
-    // Earth Texture & Sphere
-    const earthTexture = createEarthCanvasTexture();
+    // Optimized Earth Texture & Sphere
+    const earthTexture = getOrCreateEarthTexture();
     const sphereGeo = new THREE.SphereGeometry(globeRadius, 64, 64);
     const sphereMat = new THREE.MeshStandardMaterial({
       map: earthTexture,
@@ -251,15 +239,15 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     const atmosphere = new THREE.Mesh(atmosGeo, atmosMat);
     scene.add(atmosphere);
 
-    // 3. Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
     scene.add(ambientLight);
 
     const sunLight = new THREE.DirectionalLight(0xe0f2fe, 1.4);
     sunLight.position.set(6, 4, 6);
     scene.add(sunLight);
 
-    // 4. Airport Node Pins
+    // Airport Node Pins
     const airportPinsGroup = new THREE.Group();
     globeGroup.add(airportPinsGroup);
 
@@ -272,7 +260,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
       airportPinsGroup.add(dot);
     });
 
-    // 5. Dynamic Flight Arcs & Aircraft Mesh Markers
+    // Dynamic Flight Arcs & Aircraft Mesh Markers
     const flightsVisualGroup = new THREE.Group();
     globeGroup.add(flightsVisualGroup);
 
@@ -338,7 +326,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
       }
     });
 
-    // 6. Camera Chase / Auto Focus on Active Plane
+    // Camera Chase / Auto Focus on Active Plane
     const activeOrigin = getAirportByIcao(activeFlight.originIcao);
     const activeDest = getAirportByIcao(activeFlight.destIcao);
     if (activeOrigin && activeDest) {
@@ -350,12 +338,11 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
       const activeCurve = new THREE.QuadraticBezierCurve3(activeStart, activeMid, activeEnd);
       const curPos = activeCurve.getPoint(activeFlight.progressPct / 100);
 
-      // Smoothly target active plane
       const targetRotationY = -Math.atan2(curPos.x, curPos.z);
       globeGroup.rotation.y = THREE.MathUtils.lerp(globeGroup.rotation.y, targetRotationY, 0.03);
     }
 
-    // 7. Interactive Drag & Raycasting
+    // Drag, Hover & Raycasting
     let isDragging = false;
     let previousMousePosition = { x: 0, y: 0 };
     const raycaster = new THREE.Raycaster();
@@ -372,7 +359,6 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
 
-      // Raycast hover check
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObjects(raycastObjects);
       if (intersects.length > 0) {
@@ -422,7 +408,6 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
     };
     dom.addEventListener('wheel', onWheel, { passive: false });
 
-    // Animation Loop
     let animationFrameId;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
@@ -484,7 +469,6 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
 
         {/* Search, Filter Toggles & Auto-Rotate */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Quick Search */}
           <div className="relative flex-1 sm:w-60">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -496,7 +480,6 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
             />
           </div>
 
-          {/* Filter Modal Toggle Button */}
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-all ${
@@ -512,7 +495,6 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
             )}
           </button>
 
-          {/* Rotate Toggle */}
           <button
             onClick={() => setAutoRotate(!autoRotate)}
             className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition-all ${
@@ -553,7 +535,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
               className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200"
             >
               <option value="ALL">All Flight Levels</option>
-              <option value="HIGH">High Cruise (FL360 - FL410)</option>
+              <option value="HIGH">High Cruise (FL360 - FL470)</option>
               <option value="MID">Mid Cruise (FL250 - FL350)</option>
               <option value="LOW">Regional / Climb (&lt; FL250)</option>
             </select>
@@ -624,7 +606,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
             <span>Click any plane to inspect • Drag to orbit • Scroll to zoom</span>
             <span className="text-cyan-400 flex items-center space-x-1">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Live ADS-B Telemetry</span>
+              <span>Real-Time 1 Hz ADS-B Telemetry Stream</span>
             </span>
           </div>
         </div>
@@ -688,7 +670,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
               <div className="p-2.5 bg-slate-900/80 rounded-lg border border-slate-800">
                 <span className="text-[10px] text-slate-500 block uppercase">Airframe Model</span>
                 <span className="text-xs font-bold text-sky-300 truncate block">{acProfile.name}</span>
-                <span className="text-[9px] text-slate-500 block">{activeFlight.reg}</span>
+                <span className="text-[9px] text-slate-500 block">{activeFlight.reg} • {acProfile.category}</span>
               </div>
 
               <div className="p-2.5 bg-slate-900/80 rounded-lg border border-slate-800">
@@ -698,7 +680,7 @@ export default function LiveGlobeTracker({ onSelectFlightForDispatch }) {
               </div>
             </div>
 
-            {/* Fuel Telemetry & Emissions */}
+            {/* Fuel Telemetry & Real-Time Counters */}
             <div className="pt-2 border-t border-slate-800 space-y-2 text-xs">
               <div className="flex justify-between items-center text-slate-300">
                 <span className="flex items-center space-x-1 text-slate-400">

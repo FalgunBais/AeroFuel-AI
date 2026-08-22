@@ -1,40 +1,50 @@
-import React from 'react';
-import { Plane, Users, CheckCircle2, XCircle, Gauge, Flame, TrendingUp } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Plane, Users, CheckCircle2, XCircle, Gauge, Flame, TrendingUp, Filter } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
-import { AIRCRAFT_PROFILES } from '../data/aircraft';
+import { AIRCRAFT_PROFILES, AIRCRAFT_CATEGORIES } from '../data/aircraft';
 import { computeFuelPlan } from '../engine/fuelCalculations';
 
 export default function FleetComparisonTab({ inputs, origin, destination, currentAircraft, setAircraft }) {
+  const [selectedCategory, setSelectedCategory] = useState('All Types');
+
+  // Filter aircraft by category
+  const filteredProfiles = useMemo(() => {
+    if (selectedCategory === 'All Types') return AIRCRAFT_PROFILES;
+    return AIRCRAFT_PROFILES.filter((ac) => ac.category === selectedCategory);
+  }, [selectedCategory]);
+
   // Compute flight plan for each aircraft profile on this same route
-  const fleetData = AIRCRAFT_PROFILES.map((ac) => {
-    // scale payload proportionally to aircraft capacity (75% load factor)
-    const scaledPayload = Math.round(ac.maxPayloadKg * 0.75);
-    const plan = computeFuelPlan(ac, {
-      ...inputs,
-      selectedFlightLevel: ac.optimumFL,
-      payloadKg: scaledPayload,
+  const fleetData = useMemo(() => {
+    return filteredProfiles.map((ac) => {
+      const scaledPayload = Math.round(ac.maxPayloadKg * 0.75);
+      const plan = computeFuelPlan(ac, {
+        ...inputs,
+        selectedFlightLevel: ac.optimumFL,
+        payloadKg: scaledPayload,
+      });
+
+      const isFeasible = plan.fuelChain.blockFuel <= ac.maxFuelKg && plan.weights.takeoffWeightKg <= ac.mtowKg;
+      const fuelPerSeatKg = Math.round(plan.fuelChain.trip / (ac.seats || 1));
+      const co2PerSeatKg = Math.round(plan.emissions.co2TripKg / (ac.seats || 1));
+
+      return {
+        aircraft: ac,
+        id: ac.id,
+        name: ac.name,
+        type: ac.type,
+        category: ac.category,
+        seats: ac.seats,
+        blockFuelKg: plan.fuelChain.blockFuel,
+        tripFuelKg: plan.fuelChain.trip,
+        flightTimeFormatted: plan.flightTimeFormatted,
+        flightTimeMinutes: plan.flightTimeMinutes,
+        fuelPerSeatKg,
+        co2PerSeatKg,
+        isFeasible,
+        isCurrent: ac.id === currentAircraft.id,
+      };
     });
-
-    const isFeasible = plan.fuelChain.blockFuel <= ac.maxFuelKg && plan.weights.takeoffWeightKg <= ac.mtowKg;
-    const fuelPerSeatKg = Math.round(plan.fuelChain.trip / (ac.seats || 1));
-    const co2PerSeatKg = Math.round(plan.emissions.co2TripKg / (ac.seats || 1));
-
-    return {
-      aircraft: ac,
-      id: ac.id,
-      name: ac.name,
-      type: ac.type,
-      seats: ac.seats,
-      blockFuelKg: plan.fuelChain.blockFuel,
-      tripFuelKg: plan.fuelChain.trip,
-      flightTimeFormatted: plan.flightTimeFormatted,
-      flightTimeMinutes: plan.flightTimeMinutes,
-      fuelPerSeatKg,
-      co2PerSeatKg,
-      isFeasible,
-      isCurrent: ac.id === currentAircraft.id,
-    };
-  });
+  }, [filteredProfiles, inputs, currentAircraft]);
 
   return (
     <div className="space-y-6">
@@ -44,12 +54,29 @@ export default function FleetComparisonTab({ inputs, origin, destination, curren
           <div className="flex items-center space-x-2">
             <Plane className="w-5 h-5 text-cyan-400" />
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-200 font-mono">
-              Fleet Aircraft Fuel & Efficiency Benchmark
+              Global Aircraft Fleet Fuel & Efficiency Benchmark
             </h2>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Comparing fleet performance on route <strong className="text-cyan-400 font-mono">{origin.icao} → {destination.icao}</strong> ({inputs.distanceNm} NM) at 75% load factor.
+            Comparing {fleetData.length} airframes on route <strong className="text-cyan-400 font-mono">{origin.icao} → {destination.icao}</strong> ({inputs.distanceNm} NM) at 75% load factor.
           </p>
+        </div>
+
+        {/* Category Filters */}
+        <div className="flex space-x-1 overflow-x-auto pb-1 text-[11px] font-mono scrollbar-none">
+          {AIRCRAFT_CATEGORIES.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-2.5 py-1 rounded-md transition-all whitespace-nowrap ${
+                selectedCategory === cat
+                  ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-400/50 font-bold'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -67,14 +94,14 @@ export default function FleetComparisonTab({ inputs, origin, destination, curren
 
         <div className="h-64 mt-4 select-none">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={fleetData} margin={{ top: 10, right: 10, left: -15, bottom: 20 }}>
+            <BarChart data={fleetData} margin={{ top: 10, right: 10, left: -15, bottom: 35 }}>
               <XAxis
                 dataKey="name"
                 stroke="#64748b"
-                fontSize={10}
+                fontSize={9}
                 tickLine={false}
                 interval={0}
-                angle={-20}
+                angle={-25}
                 textAnchor="end"
                 fontFamily="monospace"
               />
@@ -111,13 +138,14 @@ export default function FleetComparisonTab({ inputs, origin, destination, curren
       {/* Fleet Comparison Table */}
       <div className="bg-[#0c1424] border border-slate-800 rounded-xl p-5 shadow-lg overflow-x-auto">
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 font-mono mb-3">
-          Cross-Fleet Operational Matrix
+          Cross-Fleet Operational Matrix ({fleetData.length} Airframes)
         </h3>
 
         <table className="w-full text-xs font-mono text-left">
           <thead>
             <tr className="border-b border-slate-800 text-slate-400 text-[11px]">
               <th className="py-2.5 px-3">Aircraft Airframe</th>
+              <th className="py-2.5 px-3">Category</th>
               <th className="py-2.5 px-3">Seats</th>
               <th className="py-2.5 px-3">Block Fuel</th>
               <th className="py-2.5 px-3">Flight Time</th>
@@ -146,6 +174,7 @@ export default function FleetComparisonTab({ inputs, origin, destination, curren
                   </div>
                   <span className="text-[10px] text-slate-500">{row.type}</span>
                 </td>
+                <td className="py-3 px-3 text-slate-400">{row.category}</td>
                 <td className="py-3 px-3">{row.seats} pax</td>
                 <td className="py-3 px-3 font-semibold text-slate-200">{row.blockFuelKg.toLocaleString()} kg</td>
                 <td className="py-3 px-3 text-slate-400">{row.flightTimeFormatted}</td>
